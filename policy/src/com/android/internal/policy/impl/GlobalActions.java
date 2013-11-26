@@ -247,8 +247,11 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
                 }
 
                 public boolean onLongPress() {
-                    mWindowManagerFuncs.rebootSafeMode(true);
-                    return true;
+					mDialog.dismiss();
+					mDialog = null;
+                    RebootActions mRebootDialog = new RebootActions(mContext, mWindowManagerFuncs);
+                    mRebootDialog.showDialog(mKeyguardShowing, mDeviceProvisioned);
+                    return false;
                 }
 
                 public boolean showDuringKeyguard() {

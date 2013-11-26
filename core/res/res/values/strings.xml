@@ -310,6 +310,25 @@
     <string name="silent_mode_vibrate">Ringer vibrate</string>
     <!-- Spoken description for ringer normal option. [CHAR LIMIT=NONE] -->
     <string name="silent_mode_ring">Ringer on</string>
+    
+	<!-- Reboot Dialog --> <skip />
+    <!-- Normal reboot button -->
+    <string name="reboot_normal">Restart</string>
+    <!-- Recovery reboot button -->
+    <string name="reboot_recovery">Enter recovery mode</string>
+    <!-- Bootloader reboot button -->
+    <string name="reboot_bootloader">Enter bootloader mode</string>
+    <!-- Safe mode reboot button -->
+    <string name="reboot_safe_mode">Enter safe mode</string>
+
+	<!-- Reboot Progress Dialog. This is shown if the user chooses to reboot the phone. -->
+    <string name="reboot_progress">Restarting\u2026</string>
+	<!-- Reboot Progress Dialog. This is shown if the user chooses to enter recovery mode. -->
+    <string name="recovery_progress">Entering recovery mode\u2026</string>
+	<!-- Reboot Progress Dialog. This is shown if the user chooses to enter bootloader mode. -->
+    <string name="bootloader_progress">Entering bootloader mode\u2026</string>
+	<!-- Reboot Progress Dialog. This is shown if the user chooses to enter safe mode. -->
+    <string name="safe_mode_progress">Entering safe mode\u2026</string>
 
     <!-- Shutdown Progress Dialog. This is shown if the user chooses to power off the phone. -->
     <string name="shutdown_progress">Shutting down\u2026</string>

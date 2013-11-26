@@ -210,11 +210,33 @@ public final class ShutdownThread extends Thread {
             sIsStarted = true;
         }
 
-        // throw up an indeterminate system dialog to indicate radio is
-        // shutting down.
+        // determine what type of shutdown we're doing before displaying 
+        // any message, then pick the appropriate one
+        
+        CharSequence intermediateTitle;
+        CharSequence intermediateMessage;
+        
+        if (mReboot == true) {
+            intermediateTitle = context.getText(com.android.internal.R.string.reboot_normal);
+            if (mRebootSafeMode == true) {
+                intermediateMessage = context.getText(com.android.internal.R.string.safe_mode_progress);
+            } else {
+                if (mRebootReason == "recovery") {
+                    intermediateMessage = context.getText(com.android.internal.R.string.recovery_progress);
+                } else if (mRebootReason == "bootloader") {
+                    intermediateMessage = context.getText(com.android.internal.R.string.bootloader_progress);
+                } else {
+                    intermediateMessage = context.getText(com.android.internal.R.string.reboot_progress);
+                }
+            }
+        } else {
+            intermediateTitle = context.getText(com.android.internal.R.string.power_off);
+            intermediateMessage = context.getText(com.android.internal.R.string.shutdown_progress);
+        }        
+        
         ProgressDialog pd = new ProgressDialog(context);
-        pd.setTitle(context.getText(com.android.internal.R.string.power_off));
-        pd.setMessage(context.getText(com.android.internal.R.string.shutdown_progress));
+        pd.setTitle(intermediateTitle);
+        pd.setMessage(intermediateMessage);
         pd.setIndeterminate(true);
         pd.setCancelable(false);
         pd.getWindow().setType(WindowManager.LayoutParams.TYPE_KEYGUARD_DIALOG);

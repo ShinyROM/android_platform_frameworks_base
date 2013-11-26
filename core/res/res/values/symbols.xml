@@ -677,6 +677,10 @@
   <java-symbol type="string" name="postalTypeOther" />
   <java-symbol type="string" name="postalTypeWork" />
   <java-symbol type="string" name="power_off" />
+  <java-symbol type="string" name="reboot_normal" />
+  <java-symbol type="string" name="reboot_recovery" />
+  <java-symbol type="string" name="reboot_bootloader" />
+  <java-symbol type="string" name="reboot_safe_mode" />
   <java-symbol type="string" name="preposition_for_date" />
   <java-symbol type="string" name="preposition_for_time" />
   <java-symbol type="string" name="print_service_installed_title" />
@@ -752,6 +756,10 @@
   <java-symbol type="string" name="shutdown_confirm" />
   <java-symbol type="string" name="shutdown_confirm_question" />
   <java-symbol type="string" name="shutdown_progress" />
+  <java-symbol type="string" name="reboot_progress" />
+  <java-symbol type="string" name="recovery_progress" />
+  <java-symbol type="string" name="bootloader_progress" />
+  <java-symbol type="string" name="safe_mode_progress" />
   <java-symbol type="string" name="sim_added_message" />
   <java-symbol type="string" name="sim_added_title" />
   <java-symbol type="string" name="sim_removed_message" />
@@ -1308,6 +1316,10 @@
   <java-symbol type="drawable" name="ic_jog_dial_vibrate_on" />
   <java-symbol type="drawable" name="ic_lock_airplane_mode" />
   <java-symbol type="drawable" name="ic_lock_airplane_mode_off" />
+  <java-symbol type="drawable" name="ic_lock_reboot_bootloader" />
+  <java-symbol type="drawable" name="ic_lock_reboot_final" />
+  <java-symbol type="drawable" name="ic_lock_reboot_recovery" />
+  <java-symbol type="drawable" name="ic_lock_reboot_safe_mode" />
   <java-symbol type="drawable" name="ic_menu_cc" />
   <java-symbol type="drawable" name="jog_tab_bar_left_unlock" />
   <java-symbol type="drawable" name="jog_tab_bar_right_sound_off" />

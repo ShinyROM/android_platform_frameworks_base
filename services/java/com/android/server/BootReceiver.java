@@ -29,7 +29,9 @@ import android.os.RecoverySystem;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.SystemProperties;
+import android.os.UserHandle;
 import android.provider.Downloads;
+import android.provider.Settings;
 import android.util.Slog;
 
 import java.io.File;
@@ -59,9 +61,12 @@ public class BootReceiver extends BroadcastReceiver {
 
     // Keep a reference to the observer so the finalizer doesn't disable it.
     private static FileObserver sTombstoneObserver = null;
+    
+    private Context mContext;
 
     @Override
     public void onReceive(final Context context, Intent intent) {
+		mContext = context;
         // Log boot events in the background to avoid blocking the main thread with I/O
         new Thread() {
             @Override
@@ -92,6 +97,28 @@ public class BootReceiver extends BroadcastReceiver {
     private void removeOldUpdatePackages(Context context) {
         Downloads.removeAllDownloadsByPackage(context, OLD_UPDATER_PACKAGE, OLD_UPDATER_CLASS);
     }
+    
+    private void fixDataOnInit() {
+		Slog.i(TAG, "Send the system into and then out of airplane mode to fix data issues.");
+		Slog.i(TAG, "Toggling airplane mode ON.");
+		Settings.Global.putInt(
+                mContext.getContentResolver(),
+                Settings.Global.AIRPLANE_MODE_ON,
+                1);
+        Intent onIntent = new Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED);
+        onIntent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING);
+        onIntent.putExtra("state", true);
+        mContext.sendBroadcastAsUser(onIntent, UserHandle.ALL);
+        Slog.i(TAG, "Toggling airplane mode OFF.");
+		Settings.Global.putInt(
+				mContext.getContentResolver(),
+				Settings.Global.AIRPLANE_MODE_ON,
+				0);
+		Intent offIntent = new Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED);
+		offIntent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING);
+		offIntent.putExtra("state", false);
+		mContext.sendBroadcastAsUser(offIntent, UserHandle.ALL);
+	}
 
     private void logBootEvents(Context ctx) throws IOException {
         final DropBoxManager db = (DropBoxManager) ctx.getSystemService(Context.DROPBOX_SERVICE);
@@ -106,7 +133,7 @@ public class BootReceiver extends BroadcastReceiver {
             .append("Kernel: ")
             .append(FileUtils.readTextFile(new File("/proc/version"), 1024, "...\n"))
             .append("\n").toString();
-
+            
         String recovery = RecoverySystem.handleAftermath();
         if (recovery != null && db != null) {
             db.addText("SYSTEM_RECOVERY_LOG", headers + recovery);
@@ -115,6 +142,10 @@ public class BootReceiver extends BroadcastReceiver {
         if (SystemProperties.getLong("ro.runtime.firstboot", 0) == 0) {
             String now = Long.toString(System.currentTimeMillis());
             SystemProperties.set("ro.runtime.firstboot", now);
+            if (SystemProperties.getInt("ro.telephony.toroRIL", 0) == 1) {
+				Slog.i(TAG, "First boot and we're on a device with toro-like RIL - better fix data!");
+				fixDataOnInit();
+			}
             if (db != null) db.addText("SYSTEM_BOOT", headers);
 
             // Negative sizes mean to take the *tail* of the file (see FileUtils.readTextFile())

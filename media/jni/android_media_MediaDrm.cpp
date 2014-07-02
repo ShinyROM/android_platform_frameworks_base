@@ -186,6 +186,7 @@ void JNIDrmListener::notify(DrmPlugin::EventType eventType, int extra,
             nativeParcel->setData(obj->data(), obj->dataSize());
             env->CallStaticVoidMethod(mClass, gFields.post_event, mObject,
                     jeventType, extra, jParcel);
+            env->DeleteLocalRef(jParcel);
         }
     }
 
@@ -267,7 +268,7 @@ static bool throwExceptionAsNecessary(
 }
 
 static sp<IDrm> GetDrm(JNIEnv *env, jobject thiz) {
-    JDrm *jdrm = (JDrm *)env->GetIntField(thiz, gFields.context);
+    JDrm *jdrm = (JDrm *)env->GetLongField(thiz, gFields.context);
     return jdrm ? jdrm->getDrm() : NULL;
 }
 
@@ -484,14 +485,14 @@ using namespace android;
 
 static sp<JDrm> setDrm(
         JNIEnv *env, jobject thiz, const sp<JDrm> &drm) {
-    sp<JDrm> old = (JDrm *)env->GetIntField(thiz, gFields.context);
+    sp<JDrm> old = (JDrm *)env->GetLongField(thiz, gFields.context);
     if (drm != NULL) {
         drm->incStrong(thiz);
     }
     if (old != NULL) {
         old->decStrong(thiz);
     }
-    env->SetIntField(thiz, gFields.context, (int)drm.get());
+    env->SetLongField(thiz, gFields.context, reinterpret_cast<jlong>(drm.get()));
 
     return old;
 }
@@ -520,7 +521,7 @@ static void android_media_MediaDrm_release(JNIEnv *env, jobject thiz) {
 static void android_media_MediaDrm_native_init(JNIEnv *env) {
     jclass clazz;
     FIND_CLASS(clazz, "android/media/MediaDrm");
-    GET_FIELD_ID(gFields.context, clazz, "mNativeContext", "I");
+    GET_FIELD_ID(gFields.context, clazz, "mNativeContext", "J");
     GET_STATIC_METHOD_ID(gFields.post_event, clazz, "postEventFromNative",
                          "(Ljava/lang/Object;IILjava/lang/Object;)V");
 

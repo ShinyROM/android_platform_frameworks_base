@@ -34,7 +34,7 @@ namespace android {
 class AndroidRuntime
 {
 public:
-    AndroidRuntime();
+    AndroidRuntime(char* argBlockStart, size_t argBlockSize);
     virtual ~AndroidRuntime();
 
     enum StartMode {
@@ -43,6 +43,8 @@ public:
         Application,
         Tool,
     };
+
+    void setArgv0(const char* argv0);
 
     /**
      * Register a set of methods in the specified class.
@@ -53,8 +55,7 @@ public:
     /**
      * Call a class's static main method with the given arguments,
      */
-    status_t callMain(const char* className, jclass clazz, int argc,
-        const char* const argv[]);
+    status_t callMain(const String8& className, jclass clazz, const Vector<String8>& args);
 
     /**
      * Find a class, with the input either of the form
@@ -64,7 +65,7 @@ public:
 
     int addVmArguments(int argc, const char* const argv[]);
 
-    void start(const char *classname, const char* options);
+    void start(const char *classname, const Vector<String8>& options);
 
     void exit(int code);
 
@@ -115,11 +116,13 @@ public:
 
 private:
     static int startReg(JNIEnv* env);
-    void parseExtraOpts(char* extraOptsBuf);
+    void parseExtraOpts(char* extraOptsBuf, const char* quotingArg);
     int startVm(JavaVM** pJavaVM, JNIEnv** pEnv);
 
     Vector<JavaVMOption> mOptions;
     bool mExitWithoutCleanup;
+    char* const mArgBlockStart;
+    const size_t mArgBlockLength;
 
     /* JNI JavaVM pointer */
     static JavaVM* mJavaVM;

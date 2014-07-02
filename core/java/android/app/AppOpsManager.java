@@ -36,7 +36,7 @@ import android.os.RemoteException;
  * API for interacting with "application operation" tracking.
  *
  * <p>This API is not generally intended for third party application developers; most
- * features are only available to system applicatins.  Obtain an instance of it through
+ * features are only available to system applications.  Obtain an instance of it through
  * {@link Context#getSystemService(String) Context.getSystemService} with
  * {@link Context#APP_OPS_SERVICE Context.APP_OPS_SERVICE}.</p>
  */
@@ -369,8 +369,8 @@ public class AppOpsManager {
             android.Manifest.permission.WRITE_CALL_LOG,
             android.Manifest.permission.READ_CALENDAR,
             android.Manifest.permission.WRITE_CALENDAR,
-            null, // no permission required for notifications
             android.Manifest.permission.ACCESS_WIFI_STATE,
+            null, // no permission required for notifications
             null, // neighboring cells shares the coarse location perm
             android.Manifest.permission.CALL_PHONE,
             android.Manifest.permission.READ_SMS,
@@ -878,7 +878,7 @@ public class AppOpsManager {
     }
 
     /**
-     * Like {@link #checkOp but instead of throwing a {@link SecurityException} it
+     * Like {@link #checkOp} but instead of throwing a {@link SecurityException} it
      * returns {@link #MODE_ERRORED}.
      */
     public int checkOpNoThrow(String op, int uid, String packageName) {

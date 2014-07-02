@@ -66,11 +66,6 @@ namespace android {
 // size measured in sizeof(uint32_t)
 #define IDMAP_HEADER_SIZE (ResTable::IDMAP_HEADER_SIZE_BYTES / sizeof(uint32_t))
 
-static void printToLogFunc(void* cookie, const char* txt)
-{
-    ALOGV("%s", txt);
-}
-
 // Standard C isspace() is only required to look at the low byte of its input, so
 // produces incorrect results for UTF-16 characters.  For safety's sake, assume that
 // any high-byte UTF-16 code point is not whitespace.
@@ -106,22 +101,27 @@ static status_t validate_chunk(const ResChunk_header* chunk,
                 if ((ssize_t)size <= (dataEnd-((const uint8_t*)chunk))) {
                     return NO_ERROR;
                 }
-                ALOGW("%s data size %p extends beyond resource end %p.",
-                     name, (void*)size,
-                     (void*)(dataEnd-((const uint8_t*)chunk)));
+                ALOGW("%s data size 0x%x extends beyond resource end %p.",
+                     name, size, (void*)(dataEnd-((const uint8_t*)chunk)));
                 return BAD_TYPE;
             }
             ALOGW("%s size 0x%x or headerSize 0x%x is not on an integer boundary.",
                  name, (int)size, (int)headerSize);
             return BAD_TYPE;
         }
-        ALOGW("%s size %p is smaller than header size %p.",
-             name, (void*)size, (void*)(int)headerSize);
+        ALOGW("%s size 0x%x is smaller than header size 0x%x.",
+             name, size, headerSize);
         return BAD_TYPE;
     }
-    ALOGW("%s header size %p is too small.",
-         name, (void*)(int)headerSize);
+    ALOGW("%s header size 0x%x is too small.",
+         name, headerSize);
     return BAD_TYPE;
+}
+
+static void fill9patchOffsets(Res_png_9patch* patch) {
+    patch->xDivsOffset = sizeof(Res_png_9patch);
+    patch->yDivsOffset = patch->xDivsOffset + (patch->numXDivs * sizeof(int32_t));
+    patch->colorsOffset = patch->yDivsOffset + (patch->numYDivs * sizeof(int32_t));
 }
 
 inline void Res_value::copyFrom_dtoh(const Res_value& src)
@@ -134,9 +134,11 @@ inline void Res_value::copyFrom_dtoh(const Res_value& src)
 
 void Res_png_9patch::deviceToFile()
 {
+    int32_t* xDivs = getXDivs();
     for (int i = 0; i < numXDivs; i++) {
         xDivs[i] = htonl(xDivs[i]);
     }
+    int32_t* yDivs = getYDivs();
     for (int i = 0; i < numYDivs; i++) {
         yDivs[i] = htonl(yDivs[i]);
     }
@@ -144,6 +146,7 @@ void Res_png_9patch::deviceToFile()
     paddingRight = htonl(paddingRight);
     paddingTop = htonl(paddingTop);
     paddingBottom = htonl(paddingBottom);
+    uint32_t* colors = getColors();
     for (int i=0; i<numColors; i++) {
         colors[i] = htonl(colors[i]);
     }
@@ -151,9 +154,11 @@ void Res_png_9patch::deviceToFile()
 
 void Res_png_9patch::fileToDevice()
 {
+    int32_t* xDivs = getXDivs();
     for (int i = 0; i < numXDivs; i++) {
         xDivs[i] = ntohl(xDivs[i]);
     }
+    int32_t* yDivs = getYDivs();
     for (int i = 0; i < numYDivs; i++) {
         yDivs[i] = ntohl(yDivs[i]);
     }
@@ -161,60 +166,49 @@ void Res_png_9patch::fileToDevice()
     paddingRight = ntohl(paddingRight);
     paddingTop = ntohl(paddingTop);
     paddingBottom = ntohl(paddingBottom);
+    uint32_t* colors = getColors();
     for (int i=0; i<numColors; i++) {
         colors[i] = ntohl(colors[i]);
     }
 }
 
-size_t Res_png_9patch::serializedSize()
+size_t Res_png_9patch::serializedSize() const
 {
     // The size of this struct is 32 bytes on the 32-bit target system
     // 4 * int8_t
     // 4 * int32_t
-    // 3 * pointer
+    // 3 * uint32_t
     return 32
             + numXDivs * sizeof(int32_t)
             + numYDivs * sizeof(int32_t)
             + numColors * sizeof(uint32_t);
 }
 
-void* Res_png_9patch::serialize()
+void* Res_png_9patch::serialize(const Res_png_9patch& patch, const int32_t* xDivs,
+                                const int32_t* yDivs, const uint32_t* colors)
 {
     // Use calloc since we're going to leave a few holes in the data
     // and want this to run cleanly under valgrind
-    void* newData = calloc(1, serializedSize());
-    serialize(newData);
+    void* newData = calloc(1, patch.serializedSize());
+    serialize(patch, xDivs, yDivs, colors, newData);
     return newData;
 }
 
-void Res_png_9patch::serialize(void * outData)
+void Res_png_9patch::serialize(const Res_png_9patch& patch, const int32_t* xDivs,
+                               const int32_t* yDivs, const uint32_t* colors, void* outData)
 {
-    char* data = (char*) outData;
-    memmove(data, &wasDeserialized, 4);     // copy  wasDeserialized, numXDivs, numYDivs, numColors
-    memmove(data + 12, &paddingLeft, 16);   // copy paddingXXXX
+    uint8_t* data = (uint8_t*) outData;
+    memcpy(data, &patch.wasDeserialized, 4);     // copy  wasDeserialized, numXDivs, numYDivs, numColors
+    memcpy(data + 12, &patch.paddingLeft, 16);   // copy paddingXXXX
     data += 32;
 
-    memmove(data, this->xDivs, numXDivs * sizeof(int32_t));
-    data +=  numXDivs * sizeof(int32_t);
-    memmove(data, this->yDivs, numYDivs * sizeof(int32_t));
-    data +=  numYDivs * sizeof(int32_t);
-    memmove(data, this->colors, numColors * sizeof(uint32_t));
-}
+    memcpy(data, xDivs, patch.numXDivs * sizeof(int32_t));
+    data +=  patch.numXDivs * sizeof(int32_t);
+    memcpy(data, yDivs, patch.numYDivs * sizeof(int32_t));
+    data +=  patch.numYDivs * sizeof(int32_t);
+    memcpy(data, colors, patch.numColors * sizeof(uint32_t));
 
-static void deserializeInternal(const void* inData, Res_png_9patch* outData) {
-    char* patch = (char*) inData;
-    if (inData != outData) {
-        memmove(&outData->wasDeserialized, patch, 4);     // copy  wasDeserialized, numXDivs, numYDivs, numColors
-        memmove(&outData->paddingLeft, patch + 12, 4);     // copy  wasDeserialized, numXDivs, numYDivs, numColors
-    }
-    outData->wasDeserialized = true;
-    char* data = (char*)outData;
-    data +=  sizeof(Res_png_9patch);
-    outData->xDivs = (int32_t*) data;
-    data +=  outData->numXDivs * sizeof(int32_t);
-    outData->yDivs = (int32_t*) data;
-    data +=  outData->numYDivs * sizeof(int32_t);
-    outData->colors = (uint32_t*) data;
+    fill9patchOffsets(reinterpret_cast<Res_png_9patch*>(outData));
 }
 
 static bool assertIdmapHeader(const uint32_t* map, size_t sizeBytes)
@@ -284,22 +278,48 @@ static status_t getIdmapPackageId(const uint32_t* map, size_t mapSize, uint32_t 
     if (!assertIdmapHeader(map, mapSize)) {
         return UNKNOWN_ERROR;
     }
+    if (mapSize <= IDMAP_HEADER_SIZE + 1) {
+        ALOGW("corrupt idmap: map size %d too short\n", mapSize);
+        return UNKNOWN_ERROR;
+    }
+    uint32_t typeCount = *(map + IDMAP_HEADER_SIZE);
+    if (typeCount == 0) {
+        ALOGW("corrupt idmap: no types\n");
+        return UNKNOWN_ERROR;
+    }
+    if (IDMAP_HEADER_SIZE + 1 + typeCount > mapSize) {
+        ALOGW("corrupt idmap: number of types %d extends past idmap size %d\n", typeCount, mapSize);
+        return UNKNOWN_ERROR;
+    }
     const uint32_t* p = map + IDMAP_HEADER_SIZE + 1;
+    // find first defined type
     while (*p == 0) {
         ++p;
+        if (--typeCount == 0) {
+            ALOGW("corrupt idmap: types declared, none found\n");
+            return UNKNOWN_ERROR;
+        }
     }
-    *outId = (map[*p + IDMAP_HEADER_SIZE + 2] >> 24) & 0x000000ff;
+
+    // determine package id from first entry of first type
+    const uint32_t offset = *p + IDMAP_HEADER_SIZE + 2;
+    if (offset > mapSize) {
+        ALOGW("corrupt idmap: entry offset %d points outside map size %d\n", offset, mapSize);
+        return UNKNOWN_ERROR;
+    }
+    *outId = (map[offset] >> 24) & 0x000000ff;
+
     return NO_ERROR;
 }
 
-Res_png_9patch* Res_png_9patch::deserialize(const void* inData)
+Res_png_9patch* Res_png_9patch::deserialize(void* inData)
 {
-    if (sizeof(void*) != sizeof(int32_t)) {
-        ALOGE("Cannot deserialize on non 32-bit system\n");
-        return NULL;
-    }
-    deserializeInternal(inData, (Res_png_9patch*) inData);
-    return (Res_png_9patch*) inData;
+
+    Res_png_9patch* patch = reinterpret_cast<Res_png_9patch*>(inData);
+    patch->wasDeserialized = true;
+    fill9patchOffsets(patch);
+
+    return patch;
 }
 
 // --------------------------------------------------------------------
@@ -1246,7 +1266,7 @@ ResXMLParser::event_code_t ResXMLParser::nextNode()
         const ResXMLTree_node* next = (const ResXMLTree_node*)
             (((const uint8_t*)mCurNode) + dtohl(mCurNode->header.size));
         //ALOGW("Next node: prev=%p, next=%p\n", mCurNode, next);
-        
+
         if (((const uint8_t*)next) >= mTree.mDataEnd) {
             mCurNode = NULL;
             return (mEventCode=END_DOCUMENT);
@@ -1283,7 +1303,7 @@ ResXMLParser::event_code_t ResXMLParser::nextNode()
                      (int)(((const uint8_t*)next)-((const uint8_t*)mTree.mHeader)));
                 continue;
         }
-        
+
         if ((totalSize-headerSize) < minExtSize) {
             ALOGW("Bad XML block: header type 0x%x in node at 0x%x has size %d, need %d\n",
                  (int)dtohs(next->header.type),
@@ -1291,10 +1311,10 @@ ResXMLParser::event_code_t ResXMLParser::nextNode()
                  (int)(totalSize-headerSize), (int)minExtSize);
             return (mEventCode=BAD_DOCUMENT);
         }
-        
+
         //printf("CurNode=%p, CurExt=%p, headerSize=%d, minExtSize=%d\n",
         //       mCurNode, mCurExt, headerSize, minExtSize);
-        
+
         return eventCode;
     } while (true);
 }
@@ -1539,6 +1559,71 @@ void ResTable_config::copyFromDeviceNoSwap(const ResTable_config& o) {
     }
 }
 
+/* static */ size_t unpackLanguageOrRegion(const char in[2], const char base,
+        char out[4]) {
+  if (in[0] & 0x80) {
+      // The high bit is "1", which means this is a packed three letter
+      // language code.
+
+      // The smallest 5 bits of the second char are the first alphabet.
+      const uint8_t first = in[1] & 0x1f;
+      // The last three bits of the second char and the first two bits
+      // of the first char are the second alphabet.
+      const uint8_t second = ((in[1] & 0xe0) >> 5) + ((in[0] & 0x03) << 3);
+      // Bits 3 to 7 (inclusive) of the first char are the third alphabet.
+      const uint8_t third = (in[0] & 0x7c) >> 2;
+
+      out[0] = first + base;
+      out[1] = second + base;
+      out[2] = third + base;
+      out[3] = 0;
+
+      return 3;
+  }
+
+  if (in[0]) {
+      memcpy(out, in, 2);
+      memset(out + 2, 0, 2);
+      return 2;
+  }
+
+  memset(out, 0, 4);
+  return 0;
+}
+
+/* static */ void packLanguageOrRegion(const char* in, const char base,
+        char out[2]) {
+  if (in[2] == 0 || in[2] == '-') {
+      out[0] = in[0];
+      out[1] = in[1];
+  } else {
+      uint8_t first = (in[0] - base) & 0x00ef;
+      uint8_t second = (in[1] - base) & 0x00ef;
+      uint8_t third = (in[2] - base) & 0x00ef;
+
+      out[0] = (0x80 | (third << 2) | (second >> 3));
+      out[1] = ((second << 5) | first);
+  }
+}
+
+
+void ResTable_config::packLanguage(const char* language) {
+    packLanguageOrRegion(language, 'a', this->language);
+}
+
+void ResTable_config::packRegion(const char* region) {
+    packLanguageOrRegion(region, '0', this->country);
+}
+
+size_t ResTable_config::unpackLanguage(char language[4]) const {
+    return unpackLanguageOrRegion(this->language, 'a', language);
+}
+
+size_t ResTable_config::unpackRegion(char region[4]) const {
+    return unpackLanguageOrRegion(this->country, '0', region);
+}
+
+
 void ResTable_config::copyFromDtoH(const ResTable_config& o) {
     copyFromDeviceNoSwap(o);
     size = sizeof(ResTable_config);
@@ -1568,10 +1653,30 @@ void ResTable_config::swapHtoD() {
     screenHeightDp = htods(screenHeightDp);
 }
 
+/* static */ inline int compareLocales(const ResTable_config &l, const ResTable_config &r) {
+    if (l.locale != r.locale) {
+        // NOTE: This is the old behaviour with respect to comparison orders.
+        // The diff value here doesn't make much sense (given our bit packing scheme)
+        // but it's stable, and that's all we need.
+        return l.locale - r.locale;
+    }
+
+    // The language & region are equal, so compare the scripts and variants.
+    int script = memcmp(l.localeScript, r.localeScript, sizeof(l.localeScript));
+    if (script) {
+        return script;
+    }
+
+    // The language, region and script are equal, so compare variants.
+    //
+    // This should happen very infrequently (if at all.)
+    return memcmp(l.localeVariant, r.localeVariant, sizeof(l.localeVariant));
+}
+
 int ResTable_config::compare(const ResTable_config& o) const {
     int32_t diff = (int32_t)(imsi - o.imsi);
     if (diff != 0) return diff;
-    diff = (int32_t)(locale - o.locale);
+    diff = compareLocales(*this, o);
     if (diff != 0) return diff;
     diff = (int32_t)(screenType - o.screenType);
     if (diff != 0) return diff;
@@ -1598,18 +1703,15 @@ int ResTable_config::compareLogical(const ResTable_config& o) const {
     if (mnc != o.mnc) {
         return mnc < o.mnc ? -1 : 1;
     }
-    if (language[0] != o.language[0]) {
-        return language[0] < o.language[0] ? -1 : 1;
+
+    int diff = compareLocales(*this, o);
+    if (diff < 0) {
+        return -1;
     }
-    if (language[1] != o.language[1]) {
-        return language[1] < o.language[1] ? -1 : 1;
+    if (diff > 0) {
+        return 1;
     }
-    if (country[0] != o.country[0]) {
-        return country[0] < o.country[0] ? -1 : 1;
-    }
-    if (country[1] != o.country[1]) {
-        return country[1] < o.country[1] ? -1 : 1;
-    }
+
     if ((screenLayout & MASK_LAYOUTDIR) != (o.screenLayout & MASK_LAYOUTDIR)) {
         return (screenLayout & MASK_LAYOUTDIR) < (o.screenLayout & MASK_LAYOUTDIR) ? -1 : 1;
     }
@@ -1656,7 +1758,6 @@ int ResTable_config::diff(const ResTable_config& o) const {
     int diffs = 0;
     if (mcc != o.mcc) diffs |= CONFIG_MCC;
     if (mnc != o.mnc) diffs |= CONFIG_MNC;
-    if (locale != o.locale) diffs |= CONFIG_LOCALE;
     if (orientation != o.orientation) diffs |= CONFIG_ORIENTATION;
     if (density != o.density) diffs |= CONFIG_DENSITY;
     if (touchscreen != o.touchscreen) diffs |= CONFIG_TOUCHSCREEN;
@@ -1671,7 +1772,42 @@ int ResTable_config::diff(const ResTable_config& o) const {
     if (uiMode != o.uiMode) diffs |= CONFIG_UI_MODE;
     if (smallestScreenWidthDp != o.smallestScreenWidthDp) diffs |= CONFIG_SMALLEST_SCREEN_SIZE;
     if (screenSizeDp != o.screenSizeDp) diffs |= CONFIG_SCREEN_SIZE;
+
+    const int diff = compareLocales(*this, o);
+    if (diff) diffs |= CONFIG_LOCALE;
+
     return diffs;
+}
+
+int ResTable_config::isLocaleMoreSpecificThan(const ResTable_config& o) const {
+    if (locale || o.locale) {
+        if (language[0] != o.language[0]) {
+            if (!language[0]) return -1;
+            if (!o.language[0]) return 1;
+        }
+
+        if (country[0] != o.country[0]) {
+            if (!country[0]) return -1;
+            if (!o.country[0]) return 1;
+        }
+    }
+
+    // There isn't a well specified "importance" order between variants and
+    // scripts. We can't easily tell whether, say "en-Latn-US" is more or less
+    // specific than "en-US-POSIX".
+    //
+    // We therefore arbitrarily decide to give priority to variants over
+    // scripts since it seems more useful to do so. We will consider
+    // "en-US-POSIX" to be more specific than "en-Latn-US".
+
+    const int score = ((localeScript[0] != 0) ? 1 : 0) +
+        ((localeVariant[0] != 0) ? 2 : 0);
+
+    const int oScore = ((o.localeScript[0] != 0) ? 1 : 0) +
+        ((o.localeVariant[0] != 0) ? 2 : 0);
+
+    return score - oScore;
+
 }
 
 bool ResTable_config::isMoreSpecificThan(const ResTable_config& o) const {
@@ -1691,14 +1827,13 @@ bool ResTable_config::isMoreSpecificThan(const ResTable_config& o) const {
     }
 
     if (locale || o.locale) {
-        if (language[0] != o.language[0]) {
-            if (!language[0]) return false;
-            if (!o.language[0]) return true;
+        const int diff = isLocaleMoreSpecificThan(o);
+        if (diff < 0) {
+            return false;
         }
 
-        if (country[0] != o.country[0]) {
-            if (!country[0]) return false;
-            if (!o.country[0]) return true;
+        if (diff > 0) {
+            return true;
         }
     }
 
@@ -1831,6 +1966,18 @@ bool ResTable_config::isBetterThan(const ResTable_config& o,
 
             if ((country[0] != o.country[0]) && requested->country[0]) {
                 return (country[0]);
+            }
+        }
+
+        if (localeScript[0] || o.localeScript[0]) {
+            if (localeScript[0] != o.localeScript[0] && requested->localeScript[0]) {
+                return localeScript[0];
+            }
+        }
+
+        if (localeVariant[0] || o.localeVariant[0]) {
+            if (localeVariant[0] != o.localeVariant[0] && requested->localeVariant[0]) {
+                return localeVariant[0];
             }
         }
 
@@ -2054,17 +2201,23 @@ bool ResTable_config::match(const ResTable_config& settings) const {
         }
     }
     if (locale != 0) {
+        // Don't consider the script & variants when deciding matches.
+        //
+        // If we two configs differ only in their script or language, they
+        // can be weeded out in the isMoreSpecificThan test.
         if (language[0] != 0
             && (language[0] != settings.language[0]
                 || language[1] != settings.language[1])) {
             return false;
         }
+
         if (country[0] != 0
             && (country[0] != settings.country[0]
                 || country[1] != settings.country[1])) {
             return false;
         }
     }
+
     if (screenConfig != 0) {
         const int layoutDir = screenLayout&MASK_LAYOUTDIR;
         const int setLayoutDir = settings.screenLayout&MASK_LAYOUTDIR;
@@ -2166,17 +2319,92 @@ bool ResTable_config::match(const ResTable_config& settings) const {
     return true;
 }
 
-void ResTable_config::getLocale(char str[6]) const {
-    memset(str, 0, 6);
-    if (language[0]) {
-        str[0] = language[0];
-        str[1] = language[1];
-        if (country[0]) {
-            str[2] = '_';
-            str[3] = country[0];
-            str[4] = country[1];
-        }
+void ResTable_config::getBcp47Locale(char str[RESTABLE_MAX_LOCALE_LEN]) const {
+    memset(str, 0, RESTABLE_MAX_LOCALE_LEN);
+
+    // This represents the "any" locale value, which has traditionally been
+    // represented by the empty string.
+    if (!language[0] && !country[0]) {
+        return;
     }
+
+    size_t charsWritten = 0;
+    if (language[0]) {
+        charsWritten += unpackLanguage(str);
+    }
+
+    if (localeScript[0]) {
+        if (charsWritten) {
+            str[charsWritten++] = '-';
+        }
+        memcpy(str + charsWritten, localeScript, sizeof(localeScript));
+        charsWritten += sizeof(localeScript);
+    }
+
+    if (country[0]) {
+        if (charsWritten) {
+            str[charsWritten++] = '-';
+        }
+        charsWritten += unpackRegion(str + charsWritten);
+    }
+
+    if (localeVariant[0]) {
+        if (charsWritten) {
+            str[charsWritten++] = '-';
+        }
+        memcpy(str + charsWritten, localeVariant, sizeof(localeVariant));
+    }
+}
+
+/* static */ inline bool assignLocaleComponent(ResTable_config* config,
+        const char* start, size_t size) {
+
+  switch (size) {
+       case 0:
+           return false;
+       case 2:
+       case 3:
+           config->language[0] ? config->packRegion(start) : config->packLanguage(start);
+           break;
+       case 4:
+           config->localeScript[0] = toupper(start[0]);
+           for (size_t i = 1; i < 4; ++i) {
+               config->localeScript[i] = tolower(start[i]);
+           }
+           break;
+       case 5:
+       case 6:
+       case 7:
+       case 8:
+           for (size_t i = 0; i < size; ++i) {
+               config->localeVariant[i] = tolower(start[i]);
+           }
+           break;
+       default:
+           return false;
+  }
+
+  return true;
+}
+
+void ResTable_config::setBcp47Locale(const char* in) {
+    locale = 0;
+    memset(localeScript, 0, sizeof(localeScript));
+    memset(localeVariant, 0, sizeof(localeVariant));
+
+    const char* separator = in;
+    const char* start = in;
+    while ((separator = strchr(start, '-')) != NULL) {
+        const size_t size = separator - start;
+        if (!assignLocaleComponent(this, start, size)) {
+            fprintf(stderr, "Invalid BCP-47 locale string: %s", in);
+        }
+
+        start = (separator + 1);
+    }
+
+    const size_t size = in + strlen(in) - start;
+    assignLocaleComponent(this, start, size);
 }
 
 String8 ResTable_config::toString() const {
@@ -2190,14 +2418,10 @@ String8 ResTable_config::toString() const {
         if (res.size() > 0) res.append("-");
         res.appendFormat("%dmnc", dtohs(mnc));
     }
-    if (language[0] != 0) {
-        if (res.size() > 0) res.append("-");
-        res.append(language, 2);
-    }
-    if (country[0] != 0) {
-        if (res.size() > 0) res.append("-");
-        res.append(country, 2);
-    }
+    char localeStr[RESTABLE_MAX_LOCALE_LEN];
+    getBcp47Locale(localeStr);
+    res.append(localeStr);
+
     if ((screenLayout&MASK_LAYOUTDIR) != 0) {
         if (res.size() > 0) res.append("-");
         switch (screenLayout&ResTable_config::MASK_LAYOUTDIR) {
@@ -2461,7 +2685,7 @@ struct ResTable::Header
     size_t                          size;
     const uint8_t*                  dataEnd;
     size_t                          index;
-    void*                           cookie;
+    int32_t                         cookie;
 
     ResStringPool                   values;
     uint32_t*                       resourceIDMap;
@@ -2493,7 +2717,7 @@ struct ResTable::Package
             delete types[i];
         }
     }
-    
+
     ResTable* const                 owner;
     const Header* const             header;
     const ResTable_package* const   package;
@@ -2501,7 +2725,7 @@ struct ResTable::Package
 
     ResStringPool                   typeStrings;
     ResStringPool                   keyStrings;
-    
+
     const Type* getType(size_t idx) const {
         return idx < types.size() ? types[idx] : NULL;
     }
@@ -2551,18 +2775,18 @@ struct ResTable::PackageGroup
             bags = NULL;
         }
     }
-    
+
     ResTable* const                 owner;
     String16 const                  name;
     uint32_t const                  id;
     Vector<Package*>                packages;
-    
+
     // This is for finding typeStrings and other common package stuff.
     Package*                        basePackage;
 
     // For quick access.
     size_t                          typeCount;
-    
+
     // Computed attribute bags, first indexed by the type and second
     // by the entry in that type.
     bag_set***                      bags;
@@ -2711,7 +2935,7 @@ status_t ResTable::Theme::applyStyle(uint32_t resID, bool force)
 
     //ALOGI("Applying style 0x%08x (force=%d)  theme %p...\n", resID, force, this);
     //dumpToLog();
-    
+
     return NO_ERROR;
 }
 
@@ -2720,7 +2944,7 @@ status_t ResTable::Theme::setTo(const Theme& other)
     //ALOGI("Setting theme %p from theme %p...\n", this, &other);
     //dumpToLog();
     //other.dumpToLog();
-    
+
     if (&mTable == &other.mTable) {
         for (size_t i=0; i<Res_MAXPACKAGE; i++) {
             if (mPackages[i] != NULL) {
@@ -2750,7 +2974,7 @@ status_t ResTable::Theme::setTo(const Theme& other)
 
     //ALOGI("Final theme:");
     //dumpToLog();
-    
+
     return NO_ERROR;
 }
 
@@ -2760,7 +2984,7 @@ ssize_t ResTable::Theme::getAttribute(uint32_t resID, Res_value* outValue,
     int cnt = 20;
 
     if (outTypeSpecFlags != NULL) *outTypeSpecFlags = 0;
-    
+
     do {
         const ssize_t p = mTable.getResourcePackageIndex(resID);
         const uint32_t t = Res_GETTYPE(resID);
@@ -2834,12 +3058,12 @@ void ResTable::Theme::dumpToLog() const
     for (size_t i=0; i<Res_MAXPACKAGE; i++) {
         package_info* pi = mPackages[i];
         if (pi == NULL) continue;
-        
+
         ALOGI("  Package #0x%02x:\n", (int)(i+1));
         for (size_t j=0; j<pi->numTypes; j++) {
             type_info& ti = pi->types[j];
             if (ti.numEntries == 0) continue;
-            
+
             ALOGI("    Type #0x%02x:\n", (int)(j+1));
             for (size_t k=0; k<ti.numEntries; k++) {
                 theme_entry& te = ti.entries[k];
@@ -2860,12 +3084,12 @@ ResTable::ResTable()
     //ALOGI("Creating ResTable %p\n", this);
 }
 
-ResTable::ResTable(const void* data, size_t size, void* cookie, bool copyData)
+ResTable::ResTable(const void* data, size_t size, const int32_t cookie, bool copyData)
     : mError(NO_INIT)
 {
     memset(&mParams, 0, sizeof(mParams));
     memset(mPackageMap, 0, sizeof(mPackageMap));
-    add(data, size, cookie, copyData);
+    addInternal(data, size, cookie, NULL /* asset */, copyData, NULL /* idMap */);
     LOG_FATAL_IF(mError != NO_ERROR, "Error parsing resource table");
     //ALOGI("Creating ResTable %p\n", this);
 }
@@ -2881,13 +3105,12 @@ inline ssize_t ResTable::getResourcePackageIndex(uint32_t resID) const
     return ((ssize_t)mPackageMap[Res_GETPACKAGE(resID)+1])-1;
 }
 
-status_t ResTable::add(const void* data, size_t size, void* cookie, bool copyData,
-                       const void* idmap)
-{
-    return add(data, size, cookie, NULL, copyData, reinterpret_cast<const Asset*>(idmap));
+status_t ResTable::add(const void* data, size_t size) {
+    return addInternal(data, size, 0 /* cookie */, NULL /* asset */,
+            false /* copyData */, NULL /* idMap */);
 }
 
-status_t ResTable::add(Asset* asset, void* cookie, bool copyData, const void* idmap)
+status_t ResTable::add(Asset* asset, const int32_t cookie, bool copyData, const void* idmap)
 {
     const void* data = asset->getBuffer(true);
     if (data == NULL) {
@@ -2895,17 +3118,18 @@ status_t ResTable::add(Asset* asset, void* cookie, bool copyData, const void* id
         return UNKNOWN_ERROR;
     }
     size_t size = (size_t)asset->getLength();
-    return add(data, size, cookie, asset, copyData, reinterpret_cast<const Asset*>(idmap));
+    return addInternal(data, size, cookie, asset, copyData,
+            reinterpret_cast<const Asset*>(idmap));
 }
 
 status_t ResTable::add(ResTable* src)
 {
     mError = src->mError;
-    
+
     for (size_t i=0; i<src->mHeaders.size(); i++) {
         mHeaders.add(src->mHeaders[i]);
     }
-    
+
     for (size_t i=0; i<src->mPackageGroups.size(); i++) {
         PackageGroup* srcPg = src->mPackageGroups[i];
         PackageGroup* pg = new PackageGroup(this, srcPg->name, srcPg->id);
@@ -2916,14 +3140,14 @@ status_t ResTable::add(ResTable* src)
         pg->typeCount = srcPg->typeCount;
         mPackageGroups.add(pg);
     }
-    
+
     memcpy(mPackageMap, src->mPackageMap, sizeof(mPackageMap));
-    
+
     return mError;
 }
 
-status_t ResTable::add(const void* data, size_t size, void* cookie,
-                       Asset* asset, bool copyData, const Asset* idmap)
+status_t ResTable::addInternal(const void* data, size_t size, const int32_t cookie,
+                       Asset* /*asset*/, bool copyData, const Asset* idmap)
 {
     if (!data) return NO_ERROR;
     Header* header = new Header(this);
@@ -2945,9 +3169,9 @@ status_t ResTable::add(const void* data, size_t size, void* cookie,
     const bool notDeviceEndian = htods(0xf0) != 0xf0;
 
     LOAD_TABLE_NOISY(
-        ALOGV("Adding resources to ResTable: data=%p, size=0x%x, cookie=%p, asset=%p, copy=%d "
+        ALOGV("Adding resources to ResTable: data=%p, size=0x%x, cookie=%d, asset=%p, copy=%d "
              "idmap=%p\n", data, size, cookie, asset, copyData, idmap));
-    
+
     if (copyData || notDeviceEndian) {
         header->ownedData = malloc(size);
         if (header->ownedData == NULL) {
@@ -3027,8 +3251,8 @@ status_t ResTable::add(const void* data, size_t size, void* cookie,
             }
             curPackage++;
         } else {
-            ALOGW("Unknown chunk type %p in table at %p.\n",
-                 (void*)(int)(ctype),
+            ALOGW("Unknown chunk type 0x%x in table at %p.\n",
+                 ctype,
                  (void*)(((const uint8_t*)chunk) - ((const uint8_t*)header->header)));
         }
         chunk = (const ResChunk_header*)
@@ -3244,8 +3468,8 @@ ssize_t ResTable::getResource(uint32_t resID, Res_value* outValue, bool mayBeBag
 
         if ((dtohs(entry->flags)&entry->FLAG_COMPLEX) != 0) {
             if (!mayBeBag) {
-                ALOGW("Requesting resource %p failed because it is complex\n",
-                     (void*)resID);
+                ALOGW("Requesting resource 0x%x failed because it is complex\n",
+                     resID);
             }
             continue;
         }
@@ -3279,7 +3503,7 @@ ssize_t ResTable::getResource(uint32_t resID, Res_value* outValue, bool mayBeBag
             // are identical (diff == 0), or overlay packages will not take effect.
             continue;
         }
-        
+
         bestItem = thisConfig;
         bestValue = item;
         bestPackage = package;
@@ -3349,7 +3573,7 @@ ssize_t ResTable::resolveReference(Res_value* value, ssize_t blockIndex,
 
 const char16_t* ResTable::valueToString(
     const Res_value* value, size_t stringBlock,
-    char16_t tmpBuffer[TMP_BUFFER_SIZE], size_t* outLen)
+    char16_t /*tmpBuffer*/ [TMP_BUFFER_SIZE], size_t* outLen)
 {
     if (!value) {
         return NULL;
@@ -3372,7 +3596,7 @@ ssize_t ResTable::lockBag(uint32_t resID, const bag_entry** outBag) const
     return err;
 }
 
-void ResTable::unlockBag(const bag_entry* bag) const
+void ResTable::unlockBag(const bag_entry* /*bag*/) const
 {
     //printf("<<< unlockBag %p\n", this);
     mLock.unlock();
@@ -3473,7 +3697,7 @@ ssize_t ResTable::getBagLocked(uint32_t resID, const bag_entry** outBag,
     bag_set* set = NULL;
 
     TABLE_NOISY(ALOGI("Building bag: %p\n", (void*)resID));
-    
+
     ResTable_config bestConfig;
     memset(&bestConfig, 0, sizeof(bestConfig));
 
@@ -3520,8 +3744,8 @@ ssize_t ResTable::getBagLocked(uint32_t resID, const bag_entry** outBag,
         }
 
         if ((dtohs(entry->flags)&entry->FLAG_COMPLEX) == 0) {
-            ALOGW("Skipping entry %p in package table %d because it is not complex!\n",
-                 (void*)resID, (int)ip);
+            ALOGW("Skipping entry 0x%x in package table %zu because it is not complex!\n",
+                 resID, ip);
             continue;
         }
 
@@ -3539,7 +3763,7 @@ ssize_t ResTable::getBagLocked(uint32_t resID, const bag_entry** outBag,
             ? dtohl(((const ResTable_map_entry*)entry)->parent.ident) : 0;
         const uint32_t count = entrySize >= sizeof(ResTable_map_entry)
             ? dtohl(((const ResTable_map_entry*)entry)->count) : 0;
-        
+
         size_t N = count;
 
         TABLE_NOISY(ALOGI("Found map: size=%p parent=%p count=%d\n",
@@ -3583,7 +3807,7 @@ ssize_t ResTable::getBagLocked(uint32_t resID, const bag_entry** outBag,
         } else {
             set->typeSpecFlags = -1;
         }
-        
+
         // Now merge in the new attributes...
         ssize_t curOff = offset;
         const ResTable_map* map;
@@ -3846,7 +4070,7 @@ nope:
             TABLE_NOISY(printf("Expected type structure not found in package %s for idnex %d\n",
                                String8(group->name).string(), ti));
         }
-        
+
         size_t NTC = typeConfigs->configs.size();
         for (size_t tci=0; tci<NTC; tci++) {
             const ResTable_type* const ty = typeConfigs->configs[tci];
@@ -3862,9 +4086,9 @@ nope:
                 if (offset == ResTable_type::NO_ENTRY) {
                     continue;
                 }
-                
+
                 offset += typeOffset;
-                
+
                 if (offset > (dtohl(ty->header.size)-sizeof(ResTable_entry))) {
                     ALOGW("ResTable_entry at %d is beyond type chunk data %d",
                          offset, dtohl(ty->header.size));
@@ -3878,7 +4102,7 @@ nope:
                          String8(name, nameLen).string());
                     return 0;
                 }
-                
+
                 const ResTable_entry* const entry = (const ResTable_entry*)
                     (((const uint8_t*)ty) + offset);
                 if (dtohs(entry->size) < sizeof(*entry)) {
@@ -4035,7 +4259,7 @@ static bool parse_unit(const char* str, Res_value* outValue,
     if (*realEnd != 0) {
         return false;
     }
-    
+
     const unit_entry* cur = unitNames;
     while (cur->name) {
         if (len == cur->len && strncmp(cur->name, str, len) == 0) {
@@ -4186,7 +4410,7 @@ bool ResTable::stringToFloat(const char16_t* s, size_t len, Res_value* outValue)
             if (neg) {
                 mantissa = (-mantissa) & Res_value::COMPLEX_MANTISSA_MASK;
             }
-            outValue->data |= 
+            outValue->data |=
                 (radix<<Res_value::COMPLEX_RADIX_SHIFT)
                 | (mantissa<<Res_value::COMPLEX_MANTISSA_SHIFT);
             //printf("Input value: %f 0x%016Lx, mult: %f, radix: %d, shift: %d, final: 0x%08x\n",
@@ -4299,7 +4523,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
         // Note: we don't check attrType here because the reference can
         // be to any other type; we just need to count on the client making
         // sure the referenced type is correct.
-        
+
         //printf("Looking up ref: %s\n", String8(s, len).string());
 
         // It's a reference!
@@ -4386,7 +4610,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
             }
         }
     }
-    
+
     if (*s == '#') {
         // It's a color!  Convert to an integer of the form 0xaarrggbb.
         uint32_t color = 0;
@@ -4486,7 +4710,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
         //       String8(package).string(), String8(type).string(),
         //       String8(name).string());
         uint32_t specFlags = 0;
-        uint32_t rid = 
+        uint32_t rid =
             identifierForName(name.string(), name.size(),
                               type.string(), type.size(),
                               package.string(), package.size(), &specFlags);
@@ -4651,7 +4875,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
                             return true;
                         }
                     }
-    
+
                 }
                 bag++;
                 cnt--;
@@ -4930,7 +5154,7 @@ const ResStringPool* ResTable::getTableStringBlock(size_t index) const
     return &mHeaders[index]->values;
 }
 
-void* ResTable::getTableCookie(size_t index) const
+int32_t ResTable::getTableCookie(size_t index) const
 {
     return mHeaders[index]->cookie;
 }
@@ -4950,18 +5174,20 @@ void ResTable::getConfigurations(Vector<ResTable_config>* configs) const
                 const size_t L = type->configs.size();
                 for (size_t l=0; l<L; l++) {
                     const ResTable_type* config = type->configs[l];
-                    const ResTable_config* cfg = &config->config;
+                    ResTable_config cfg;
+                    memset(&cfg, 0, sizeof(ResTable_config));
+                    cfg.copyFromDtoH(config->config);
                     // only insert unique
                     const size_t M = configs->size();
                     size_t m;
                     for (m=0; m<M; m++) {
-                        if (0 == (*configs)[m].compare(*cfg)) {
+                        if (0 == (*configs)[m].compare(cfg)) {
                             break;
                         }
                     }
                     // if we didn't find it
                     if (m == M) {
-                        configs->add(*cfg);
+                        configs->add(cfg);
                     }
                 }
             }
@@ -4976,9 +5202,10 @@ void ResTable::getLocales(Vector<String8>* locales) const
     getConfigurations(&configs);
     ALOGV("called getConfigurations size=%d", (int)configs.size());
     const size_t I = configs.size();
+
+    char locale[RESTABLE_MAX_LOCALE_LEN];
     for (size_t i=0; i<I; i++) {
-        char locale[6];
-        configs[i].getLocale(locale);
+        configs[i].getBcp47Locale(locale);
         const size_t J = locales->size();
         size_t j;
         for (j=0; j<J; j++) {
@@ -5013,43 +5240,43 @@ ssize_t ResTable::getEntry(
             entryIndex, (int)allTypes->entryCount);
         return BAD_TYPE;
     }
-        
+
     const ResTable_type* type = NULL;
     uint32_t offset = ResTable_type::NO_ENTRY;
     ResTable_config bestConfig;
     memset(&bestConfig, 0, sizeof(bestConfig)); // make the compiler shut up
-    
+
     const size_t NT = allTypes->configs.size();
     for (size_t i=0; i<NT; i++) {
         const ResTable_type* const thisType = allTypes->configs[i];
         if (thisType == NULL) continue;
-        
+
         ResTable_config thisConfig;
         thisConfig.copyFromDtoH(thisType->config);
 
         TABLE_GETENTRY(ALOGI("Match entry 0x%x in type 0x%x (sz 0x%x): %s\n",
                            entryIndex, typeIndex+1, dtohl(thisType->config.size),
                            thisConfig.toString().string()));
-        
+
         // Check to make sure this one is valid for the current parameters.
         if (config && !thisConfig.match(*config)) {
             TABLE_GETENTRY(ALOGI("Does not match config!\n"));
             continue;
         }
-        
+
         // Check if there is the desired entry in this type.
-        
+
         const uint8_t* const end = ((const uint8_t*)thisType)
             + dtohl(thisType->header.size);
         const uint32_t* const eindex = (const uint32_t*)
             (((const uint8_t*)thisType) + dtohs(thisType->header.headerSize));
-        
+
         uint32_t thisOffset = dtohl(eindex[entryIndex]);
         if (thisOffset == ResTable_type::NO_ENTRY) {
             TABLE_GETENTRY(ALOGI("Skipping because it is not defined!\n"));
             continue;
         }
-        
+
         if (type != NULL) {
             // Check if this one is less specific than the last found.  If so,
             // we will skip it.  We check starting with things we most care
@@ -5059,19 +5286,19 @@ ssize_t ResTable::getEntry(
                 continue;
             }
         }
-        
+
         type = thisType;
         offset = thisOffset;
         bestConfig = thisConfig;
         TABLE_GETENTRY(ALOGI("Best entry so far -- using it!\n"));
         if (!config) break;
     }
-    
+
     if (type == NULL) {
         TABLE_GETENTRY(ALOGI("No value found for requested entry!\n"));
         return BAD_INDEX;
     }
-    
+
     offset += dtohl(type->entriesStart);
     TABLE_NOISY(aout << "Looking in resource table " << package->header->header
           << ", typeOff="
@@ -5114,29 +5341,29 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
         return (mError=err);
     }
 
-    const size_t pkgSize = dtohl(pkg->header.size);
+    const uint32_t pkgSize = dtohl(pkg->header.size);
 
     if (dtohl(pkg->typeStrings) >= pkgSize) {
-        ALOGW("ResTable_package type strings at %p are past chunk size %p.",
-             (void*)dtohl(pkg->typeStrings), (void*)pkgSize);
+        ALOGW("ResTable_package type strings at 0x%x are past chunk size 0x%x.",
+             dtohl(pkg->typeStrings), pkgSize);
         return (mError=BAD_TYPE);
     }
     if ((dtohl(pkg->typeStrings)&0x3) != 0) {
-        ALOGW("ResTable_package type strings at %p is not on an integer boundary.",
-             (void*)dtohl(pkg->typeStrings));
+        ALOGW("ResTable_package type strings at 0x%x is not on an integer boundary.",
+             dtohl(pkg->typeStrings));
         return (mError=BAD_TYPE);
     }
     if (dtohl(pkg->keyStrings) >= pkgSize) {
-        ALOGW("ResTable_package key strings at %p are past chunk size %p.",
-             (void*)dtohl(pkg->keyStrings), (void*)pkgSize);
+        ALOGW("ResTable_package key strings at 0x%x are past chunk size 0x%x.",
+             dtohl(pkg->keyStrings), pkgSize);
         return (mError=BAD_TYPE);
     }
     if ((dtohl(pkg->keyStrings)&0x3) != 0) {
-        ALOGW("ResTable_package key strings at %p is not on an integer boundary.",
-             (void*)dtohl(pkg->keyStrings));
+        ALOGW("ResTable_package key strings at 0x%x is not on an integer boundary.",
+             dtohl(pkg->keyStrings));
         return (mError=BAD_TYPE);
     }
-    
+
     Package* package = NULL;
     PackageGroup* group = NULL;
     uint32_t id = idmap_id != 0 ? idmap_id : dtohl(pkg->id);
@@ -5145,12 +5372,12 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
     // always loaded alongside their idmaps, but during idmap creation
     // the package is temporarily loaded by itself.
     if (id < 256) {
-    
+
         package = new Package(this, header, pkg);
         if (package == NULL) {
             return (mError=NO_MEMORY);
         }
-        
+
         size_t idx = mPackageMap[id];
         if (idx == 0) {
             idx = mPackageGroups.size()+1;
@@ -5184,7 +5411,7 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
                 return (mError=err);
             }
             group->basePackage = package;
-            
+
             mPackageMap[id] = (uint8_t)idx;
         } else {
             group = mPackageGroups.itemAt(idx-1);
@@ -5201,10 +5428,10 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
         return NO_ERROR;
     }
 
-    
+
     // Iterate through all chunks.
     size_t curPackage = 0;
-    
+
     const ResChunk_header* chunk =
         (const ResChunk_header*)(((const uint8_t*)pkg)
                                  + dtohs(pkg->header.headerSize));
@@ -5223,9 +5450,9 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
             if (err != NO_ERROR) {
                 return (mError=err);
             }
-            
+
             const size_t typeSpecSize = dtohl(typeSpec->header.size);
-            
+
             LOAD_TABLE_NOISY(printf("TypeSpec off %p: type=0x%x, headerSize=0x%x, size=%p\n",
                                     (void*)(base-(const uint8_t*)chunk),
                                     dtohs(typeSpec->header.type),
@@ -5241,12 +5468,12 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
                      (void*)typeSpecSize);
                 return (mError=BAD_TYPE);
             }
-            
+
             if (typeSpec->id == 0) {
                 ALOGW("ResTable_type has an id of 0.");
                 return (mError=BAD_TYPE);
             }
-            
+
             while (package->types.size() < typeSpec->id) {
                 package->types.add(NULL);
             }
@@ -5262,7 +5489,7 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
             t->typeSpecFlags = (const uint32_t*)(
                     ((const uint8_t*)typeSpec) + dtohs(typeSpec->header.headerSize));
             t->typeSpec = typeSpec;
-            
+
         } else if (ctype == RES_TABLE_TYPE_TYPE) {
             const ResTable_type* type = (const ResTable_type*)(chunk);
             err = validate_chunk(&type->header, sizeof(*type)-sizeof(ResTable_config)+4,
@@ -5270,9 +5497,9 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
             if (err != NO_ERROR) {
                 return (mError=err);
             }
-            
-            const size_t typeSize = dtohl(type->header.size);
-            
+
+            const uint32_t typeSize = dtohl(type->header.size);
+
             LOAD_TABLE_NOISY(printf("Type off %p: type=0x%x, headerSize=0x%x, size=%p\n",
                                     (void*)(base-(const uint8_t*)chunk),
                                     dtohs(type->header.type),
@@ -5280,23 +5507,23 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
                                     (void*)typeSize));
             if (dtohs(type->header.headerSize)+(sizeof(uint32_t)*dtohl(type->entryCount))
                 > typeSize) {
-                ALOGW("ResTable_type entry index to %p extends beyond chunk end %p.",
+                ALOGW("ResTable_type entry index to %p extends beyond chunk end 0x%x.",
                      (void*)(dtohs(type->header.headerSize)
                              +(sizeof(uint32_t)*dtohl(type->entryCount))),
-                     (void*)typeSize);
+                     typeSize);
                 return (mError=BAD_TYPE);
             }
             if (dtohl(type->entryCount) != 0
                 && dtohl(type->entriesStart) > (typeSize-sizeof(ResTable_entry))) {
-                ALOGW("ResTable_type entriesStart at %p extends beyond chunk end %p.",
-                     (void*)dtohl(type->entriesStart), (void*)typeSize);
+                ALOGW("ResTable_type entriesStart at 0x%x extends beyond chunk end 0x%x.",
+                     dtohl(type->entriesStart), typeSize);
                 return (mError=BAD_TYPE);
             }
             if (type->id == 0) {
                 ALOGW("ResTable_type has an id of 0.");
                 return (mError=BAD_TYPE);
             }
-            
+
             while (package->types.size() < type->id) {
                 package->types.add(NULL);
             }
@@ -5309,7 +5536,7 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
                     (int)dtohl(type->entryCount), (int)t->entryCount);
                 return (mError=BAD_TYPE);
             }
-            
+
             TABLE_GETENTRY(
                 ResTable_config thisConfig;
                 thisConfig.copyFromDtoH(type->config);
@@ -5330,27 +5557,34 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
     if (group->typeCount == 0) {
         group->typeCount = package->types.size();
     }
-    
+
     return NO_ERROR;
 }
 
-status_t ResTable::createIdmap(const ResTable& overlay, uint32_t originalCrc, uint32_t overlayCrc,
-                               void** outData, size_t* outSize) const
+status_t ResTable::createIdmap(const ResTable& overlay,
+        uint32_t targetCrc, uint32_t overlayCrc,
+        const char* targetPath, const char* overlayPath,
+        void** outData, size_t* outSize) const
 {
     // see README for details on the format of map
     if (mPackageGroups.size() == 0) {
+        ALOGW("idmap: target package has no package groups, cannot create idmap\n");
         return UNKNOWN_ERROR;
     }
     if (mPackageGroups[0]->packages.size() == 0) {
+        ALOGW("idmap: target package has no packages in its first package group, "
+                "cannot create idmap\n");
         return UNKNOWN_ERROR;
     }
 
     Vector<Vector<uint32_t> > map;
+    // overlaid packages are assumed to contain only one package group
     const PackageGroup* pg = mPackageGroups[0];
     const Package* pkg = pg->packages[0];
     size_t typeCount = pkg->types.size();
     // starting size is header + first item (number of types in map)
     *outSize = (IDMAP_HEADER_SIZE + 1) * sizeof(uint32_t);
+    // overlay packages are assumed to contain only one package group
     const String16 overlayPackage(overlay.mPackageGroups[0]->packages[0]->package->name);
     const uint32_t pkg_id = pkg->package->id << 24;
 
@@ -5368,7 +5602,7 @@ status_t ResTable::createIdmap(const ResTable& overlay, uint32_t originalCrc, ui
                 | (0x00ff0000 & ((typeIndex+1)<<16))
                 | (0x0000ffff & (entryIndex));
             resource_name resName;
-            if (!this->getResourceName(resID, true, &resName)) {
+            if (!this->getResourceName(resID, false, &resName)) {
                 ALOGW("idmap: resource 0x%08x has spec but lacks values, skipping\n", resID);
                 // add dummy value, or trimming leading/trailing zeroes later will fail
                 vector.push(0);
@@ -5426,8 +5660,22 @@ status_t ResTable::createIdmap(const ResTable& overlay, uint32_t originalCrc, ui
     }
     uint32_t* data = (uint32_t*)*outData;
     *data++ = htodl(IDMAP_MAGIC);
-    *data++ = htodl(originalCrc);
+    *data++ = htodl(targetCrc);
     *data++ = htodl(overlayCrc);
+    const char* paths[] = { targetPath, overlayPath };
+    for (int j = 0; j < 2; ++j) {
+        char* p = (char*)data;
+        const char* path = paths[j];
+        const size_t I = strlen(path);
+        if (I > 255) {
+            ALOGV("path exceeds expected 255 characters: %s\n", path);
+            return UNKNOWN_ERROR;
+        }
+        for (size_t i = 0; i < 256; ++i) {
+            *p++ = i < I ? path[i] : '\0';
+        }
+        data += 256 / sizeof(uint32_t);
+    }
     const size_t mapSize = map.size();
     *data++ = htodl(mapSize);
     size_t offset = mapSize;
@@ -5441,6 +5689,10 @@ status_t ResTable::createIdmap(const ResTable& overlay, uint32_t originalCrc, ui
             *data++ = htodl(offset);
             offset += N;
         }
+    }
+    if (offset == mapSize) {
+        ALOGW("idmap: no resources in overlay package present in base package\n");
+        return UNKNOWN_ERROR;
     }
     for (size_t i = 0; i < mapSize; ++i) {
         const Vector<uint32_t>& vector = map.itemAt(i);
@@ -5463,14 +5715,25 @@ status_t ResTable::createIdmap(const ResTable& overlay, uint32_t originalCrc, ui
 }
 
 bool ResTable::getIdmapInfo(const void* idmap, size_t sizeBytes,
-                            uint32_t* pOriginalCrc, uint32_t* pOverlayCrc)
+                            uint32_t* pTargetCrc, uint32_t* pOverlayCrc,
+                            String8* pTargetPath, String8* pOverlayPath)
 {
     const uint32_t* map = (const uint32_t*)idmap;
     if (!assertIdmapHeader(map, sizeBytes)) {
         return false;
     }
-    *pOriginalCrc = map[1];
-    *pOverlayCrc = map[2];
+    if (pTargetCrc) {
+        *pTargetCrc = map[1];
+    }
+    if (pOverlayCrc) {
+        *pOverlayCrc = map[2];
+    }
+    if (pTargetPath) {
+        pTargetPath->setTo(reinterpret_cast<const char*>(map + 3));
+    }
+    if (pOverlayPath) {
+        pOverlayPath->setTo(reinterpret_cast<const char*>(map + 3 + 256 / sizeof(uint32_t)));
+    }
     return true;
 }
 
@@ -5494,7 +5757,7 @@ static void print_complex(uint32_t complex, bool isFraction)
             * RADIX_MULTS[(complex>>Res_value::COMPLEX_RADIX_SHIFT)
                             & Res_value::COMPLEX_RADIX_MASK];
     printf("%f", value);
-    
+
     if (!isFraction) {
         switch ((complex>>Res_value::COMPLEX_UNIT_SHIFT)&Res_value::COMPLEX_UNIT_MASK) {
             case Res_value::COMPLEX_UNIT_PX: printf("px"); break;
@@ -5569,7 +5832,7 @@ void ResTable::print_value(const Package* pkg, const Res_value& value) const
             } else {
                 printf("(string) null\n");
             }
-        } 
+        }
     } else if (value.dataType == Res_value::TYPE_FLOAT) {
         printf("(float) %g\n", *(const float*)&value.data);
     } else if (value.dataType == Res_value::TYPE_DIMENSION) {
@@ -5601,9 +5864,9 @@ void ResTable::print(bool inclValues) const
         printf("mError=0x%x (%s)\n", mError, strerror(mError));
     }
 #if 0
-    printf("mParams=%c%c-%c%c,\n",
-            mParams.language[0], mParams.language[1],
-            mParams.country[0], mParams.country[1]);
+    char localeStr[RESTABLE_MAX_LOCALE_LEN];
+    mParams.getBcp47Locale(localeStr);
+    printf("mParams=%s,\n" localeStr);
 #endif
     size_t pgCount = mPackageGroups.size();
     printf("Package Groups (%d)\n", (int)pgCount);
@@ -5612,7 +5875,7 @@ void ResTable::print(bool inclValues) const
         printf("Package Group %d id=%d packageCount=%d name=%s\n",
                 (int)pgIndex, pg->id, (int)pg->packages.size(),
                 String8(pg->name).string());
-        
+
         size_t pkgCount = pg->packages.size();
         for (size_t pkgIndex=0; pkgIndex<pkgCount; pkgIndex++) {
             const Package* pkg = pg->packages[pkgIndex];
@@ -5670,26 +5933,26 @@ void ResTable::print(bool inclValues) const
                     size_t entryCount = dtohl(type->entryCount);
                     uint32_t entriesStart = dtohl(type->entriesStart);
                     if ((entriesStart&0x3) != 0) {
-                        printf("      NON-INTEGER ResTable_type entriesStart OFFSET: %p\n", (void*)entriesStart);
+                        printf("      NON-INTEGER ResTable_type entriesStart OFFSET: 0x%x\n", entriesStart);
                         continue;
                     }
                     uint32_t typeSize = dtohl(type->header.size);
                     if ((typeSize&0x3) != 0) {
-                        printf("      NON-INTEGER ResTable_type header.size: %p\n", (void*)typeSize);
+                        printf("      NON-INTEGER ResTable_type header.size: 0x%x\n", typeSize);
                         continue;
                     }
                     for (size_t entryIndex=0; entryIndex<entryCount; entryIndex++) {
-                        
+
                         const uint8_t* const end = ((const uint8_t*)type)
                             + dtohl(type->header.size);
                         const uint32_t* const eindex = (const uint32_t*)
                             (((const uint8_t*)type) + dtohs(type->header.headerSize));
-                        
+
                         uint32_t thisOffset = dtohl(eindex[entryIndex]);
                         if (thisOffset == ResTable_type::NO_ENTRY) {
                             continue;
                         }
-                        
+
                         uint32_t resID = (0xff000000 & ((pkg->package->id)<<24))
                                     | (0x00ff0000 & ((typeIndex+1)<<16))
                                     | (0x0000ffff & (entryIndex));
@@ -5714,36 +5977,34 @@ void ResTable::print(bool inclValues) const
                             printf("        INVALID RESOURCE 0x%08x: ", resID);
                         }
                         if ((thisOffset&0x3) != 0) {
-                            printf("NON-INTEGER OFFSET: %p\n", (void*)thisOffset);
+                            printf("NON-INTEGER OFFSET: 0x%x\n", thisOffset);
                             continue;
                         }
                         if ((thisOffset+sizeof(ResTable_entry)) > typeSize) {
-                            printf("OFFSET OUT OF BOUNDS: %p+%p (size is %p)\n",
-                                   (void*)entriesStart, (void*)thisOffset,
-                                   (void*)typeSize);
+                            printf("OFFSET OUT OF BOUNDS: 0x%x+0x%x (size is 0x%x)\n",
+                                   entriesStart, thisOffset, typeSize);
                             continue;
                         }
-                        
+
                         const ResTable_entry* ent = (const ResTable_entry*)
                             (((const uint8_t*)type) + entriesStart + thisOffset);
                         if (((entriesStart + thisOffset)&0x3) != 0) {
-                            printf("NON-INTEGER ResTable_entry OFFSET: %p\n",
-                                 (void*)(entriesStart + thisOffset));
+                            printf("NON-INTEGER ResTable_entry OFFSET: 0x%x\n",
+                                 (entriesStart + thisOffset));
                             continue;
                         }
-                        
-                        uint16_t esize = dtohs(ent->size);
+
+                        uintptr_t esize = dtohs(ent->size);
                         if ((esize&0x3) != 0) {
-                            printf("NON-INTEGER ResTable_entry SIZE: %p\n", (void*)esize);
+                            printf("NON-INTEGER ResTable_entry SIZE: %p\n", (void *)esize);
                             continue;
                         }
                         if ((thisOffset+esize) > typeSize) {
-                            printf("ResTable_entry OUT OF BOUNDS: %p+%p+%p (size is %p)\n",
-                                   (void*)entriesStart, (void*)thisOffset,
-                                   (void*)esize, (void*)typeSize);
+                            printf("ResTable_entry OUT OF BOUNDS: 0x%x+0x%x+%p (size is 0x%x)\n",
+                                   entriesStart, thisOffset, (void *)esize, typeSize);
                             continue;
                         }
-                            
+
                         const Res_value* valuePtr = NULL;
                         const ResTable_map_entry* bagPtr = NULL;
                         Res_value value;
@@ -5758,12 +6019,12 @@ void ResTable::print(bool inclValues) const
                                    (int)value.dataType, (int)value.data,
                                    (int)value.size, (int)value.res0);
                         }
-                        
+
                         if ((dtohs(ent->flags)&ResTable_entry::FLAG_PUBLIC) != 0) {
                             printf(" (PUBLIC)");
                         }
                         printf("\n");
-                        
+
                         if (inclValues) {
                             if (valuePtr != NULL) {
                                 printf("          ");

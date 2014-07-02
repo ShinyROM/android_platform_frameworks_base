@@ -182,7 +182,7 @@ public final class Parcel {
     private static final String TAG = "Parcel";
 
     @SuppressWarnings({"UnusedDeclaration"})
-    private int mNativePtr; // used by native code
+    private long mNativePtr; // used by native code
 
     /**
      * Flag indicating if {@link #mNativePtr} was allocated by this object,
@@ -232,47 +232,47 @@ public final class Parcel {
     private static final int EX_NETWORK_MAIN_THREAD = -6;
     private static final int EX_HAS_REPLY_HEADER = -128;  // special; see below
 
-    private static native int nativeDataSize(int nativePtr);
-    private static native int nativeDataAvail(int nativePtr);
-    private static native int nativeDataPosition(int nativePtr);
-    private static native int nativeDataCapacity(int nativePtr);
-    private static native void nativeSetDataSize(int nativePtr, int size);
-    private static native void nativeSetDataPosition(int nativePtr, int pos);
-    private static native void nativeSetDataCapacity(int nativePtr, int size);
+    private static native int nativeDataSize(long nativePtr);
+    private static native int nativeDataAvail(long nativePtr);
+    private static native int nativeDataPosition(long nativePtr);
+    private static native int nativeDataCapacity(long nativePtr);
+    private static native void nativeSetDataSize(long nativePtr, int size);
+    private static native void nativeSetDataPosition(long nativePtr, int pos);
+    private static native void nativeSetDataCapacity(long nativePtr, int size);
 
-    private static native boolean nativePushAllowFds(int nativePtr, boolean allowFds);
-    private static native void nativeRestoreAllowFds(int nativePtr, boolean lastValue);
+    private static native boolean nativePushAllowFds(long nativePtr, boolean allowFds);
+    private static native void nativeRestoreAllowFds(long nativePtr, boolean lastValue);
 
-    private static native void nativeWriteByteArray(int nativePtr, byte[] b, int offset, int len);
-    private static native void nativeWriteInt(int nativePtr, int val);
-    private static native void nativeWriteLong(int nativePtr, long val);
-    private static native void nativeWriteFloat(int nativePtr, float val);
-    private static native void nativeWriteDouble(int nativePtr, double val);
-    private static native void nativeWriteString(int nativePtr, String val);
-    private static native void nativeWriteStrongBinder(int nativePtr, IBinder val);
-    private static native void nativeWriteFileDescriptor(int nativePtr, FileDescriptor val);
+    private static native void nativeWriteByteArray(long nativePtr, byte[] b, int offset, int len);
+    private static native void nativeWriteInt(long nativePtr, int val);
+    private static native void nativeWriteLong(long nativePtr, long val);
+    private static native void nativeWriteFloat(long nativePtr, float val);
+    private static native void nativeWriteDouble(long nativePtr, double val);
+    private static native void nativeWriteString(long nativePtr, String val);
+    private static native void nativeWriteStrongBinder(long nativePtr, IBinder val);
+    private static native void nativeWriteFileDescriptor(long nativePtr, FileDescriptor val);
 
-    private static native byte[] nativeCreateByteArray(int nativePtr);
-    private static native int nativeReadInt(int nativePtr);
-    private static native long nativeReadLong(int nativePtr);
-    private static native float nativeReadFloat(int nativePtr);
-    private static native double nativeReadDouble(int nativePtr);
-    private static native String nativeReadString(int nativePtr);
-    private static native IBinder nativeReadStrongBinder(int nativePtr);
-    private static native FileDescriptor nativeReadFileDescriptor(int nativePtr);
+    private static native byte[] nativeCreateByteArray(long nativePtr);
+    private static native int nativeReadInt(long nativePtr);
+    private static native long nativeReadLong(long nativePtr);
+    private static native float nativeReadFloat(long nativePtr);
+    private static native double nativeReadDouble(long nativePtr);
+    private static native String nativeReadString(long nativePtr);
+    private static native IBinder nativeReadStrongBinder(long nativePtr);
+    private static native FileDescriptor nativeReadFileDescriptor(long nativePtr);
 
-    private static native int nativeCreate();
-    private static native void nativeFreeBuffer(int nativePtr);
-    private static native void nativeDestroy(int nativePtr);
+    private static native long nativeCreate();
+    private static native void nativeFreeBuffer(long nativePtr);
+    private static native void nativeDestroy(long nativePtr);
 
-    private static native byte[] nativeMarshall(int nativePtr);
+    private static native byte[] nativeMarshall(long nativePtr);
     private static native void nativeUnmarshall(
-            int nativePtr, byte[] data, int offest, int length);
+            long nativePtr, byte[] data, int offest, int length);
     private static native void nativeAppendFrom(
-            int thisNativePtr, int otherNativePtr, int offset, int length);
-    private static native boolean nativeHasFileDescriptors(int nativePtr);
-    private static native void nativeWriteInterfaceToken(int nativePtr, String interfaceName);
-    private static native void nativeEnforceInterface(int nativePtr, String interfaceName);
+            long thisNativePtr, long otherNativePtr, int offset, int length);
+    private static native boolean nativeHasFileDescriptors(long nativePtr);
+    private static native void nativeWriteInterfaceToken(long nativePtr, String interfaceName);
+    private static native void nativeEnforceInterface(long nativePtr, String interfaceName);
 
     public final static Parcelable.Creator<String> STRING_CREATOR
              = new Parcelable.Creator<String>() {
@@ -1246,9 +1246,6 @@ public final class Parcel {
         } else if (v instanceof Parcelable[]) {
             writeInt(VAL_PARCELABLEARRAY);
             writeParcelableArray((Parcelable[]) v, 0);
-        } else if (v instanceof Object[]) {
-            writeInt(VAL_OBJECTARRAY);
-            writeArray((Object[]) v);
         } else if (v instanceof int[]) {
             writeInt(VAL_INTARRAY);
             writeIntArray((int[]) v);
@@ -1258,12 +1255,20 @@ public final class Parcel {
         } else if (v instanceof Byte) {
             writeInt(VAL_BYTE);
             writeInt((Byte) v);
-        } else if (v instanceof Serializable) {
-            // Must be last
-            writeInt(VAL_SERIALIZABLE);
-            writeSerializable((Serializable) v);
         } else {
-            throw new RuntimeException("Parcel: unable to marshal value " + v);
+            Class<?> clazz = v.getClass();
+            if (clazz.isArray() && clazz.getComponentType() == Object.class) {
+                // Only pure Object[] are written here, Other arrays of non-primitive types are
+                // handled by serialization as this does not record the component type.
+                writeInt(VAL_OBJECTARRAY);
+                writeArray((Object[]) v);
+            } else if (v instanceof Serializable) {
+                // Must be last
+                writeInt(VAL_SERIALIZABLE);
+                writeSerializable((Serializable) v);
+            } else {
+                throw new RuntimeException("Parcel: unable to marshal value " + v);
+            }
         }
     }
 
@@ -1454,10 +1459,11 @@ public final class Parcel {
     }
 
     /**
-     * Use this function for customized exception handling.
-     * customized method call this method for all unknown case
-     * @param code exception code
-     * @param msg exception message
+     * Throw an exception with the given message. Not intended for use
+     * outside the Parcel class.
+     *
+     * @param code Used to determine which exception class to throw.
+     * @param msg The exception message.
      */
     public final void readException(int code, String msg) {
         switch (code) {
@@ -2229,6 +2235,11 @@ public final class Parcel {
         mCreators = new HashMap<ClassLoader,HashMap<String,Parcelable.Creator>>();
 
     static protected final Parcel obtain(int obj) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** @hide */
+    static protected final Parcel obtain(long obj) {
         final Parcel[] pool = sHolderPool;
         synchronized (pool) {
             Parcel p;
@@ -2247,7 +2258,7 @@ public final class Parcel {
         return new Parcel(obj);
     }
 
-    private Parcel(int nativePtr) {
+    private Parcel(long nativePtr) {
         if (DEBUG_RECYCLE) {
             mStack = new RuntimeException();
         }
@@ -2255,7 +2266,7 @@ public final class Parcel {
         init(nativePtr);
     }
 
-    private void init(int nativePtr) {
+    private void init(long nativePtr) {
         if (nativePtr != 0) {
             mNativePtr = nativePtr;
             mOwnsNativeParcelObject = false;

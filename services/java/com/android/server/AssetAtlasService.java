@@ -114,12 +114,11 @@ public class AssetAtlasService extends IAssetAtlas.Stub {
 
     // Describes how bitmaps are placed in the atlas. Each bitmap is
     // represented by several entries in the array:
-    // int0: SkBitmap*, the native bitmap object
-    // int1: x position
-    // int2: y position
-    // int3: rotated, 1 if the bitmap must be rotated, 0 otherwise
-    // NOTE: This will need to be handled differently to support 64 bit pointers
-    private int[] mAtlasMap;
+    // long0: SkBitmap*, the native bitmap object
+    // long1: x position
+    // long2: y position
+    // long3: rotated, 1 if the bitmap must be rotated, 0 otherwise
+    private long[] mAtlasMap;
 
     /**
      * Creates a new service. Upon creating, the service will gather the list of
@@ -196,7 +195,7 @@ public class AssetAtlasService extends IAssetAtlas.Stub {
         private final ArrayList<Bitmap> mBitmaps;
         private final int mPixelCount;
 
-        private int mNativeBitmap;
+        private long mNativeBitmap;
 
         // Used for debugging only
         private Bitmap mAtlasBitmap;
@@ -260,8 +259,8 @@ public class AssetAtlasService extends IAssetAtlas.Stub {
 
             final Atlas.Entry entry = new Atlas.Entry();
 
-            mAtlasMap = new int[packCount * ATLAS_MAP_ENTRY_FIELD_COUNT];
-            int[] atlasMap = mAtlasMap;
+            mAtlasMap = new long[packCount * ATLAS_MAP_ENTRY_FIELD_COUNT];
+            long[] atlasMap = mAtlasMap;
             int mapIndex = 0;
 
             boolean result = false;
@@ -288,7 +287,6 @@ public class AssetAtlasService extends IAssetAtlas.Stub {
                         }
                         canvas.drawBitmap(bitmap, 0.0f, 0.0f, null);
                         canvas.restore();
-
                         atlasMap[mapIndex++] = bitmap.mNativeBitmap;
                         atlasMap[mapIndex++] = entry.x;
                         atlasMap[mapIndex++] = entry.y;
@@ -365,9 +363,9 @@ public class AssetAtlasService extends IAssetAtlas.Stub {
         }
     }
 
-    private static native int nAcquireAtlasCanvas(Canvas canvas, int width, int height);
-    private static native void nReleaseAtlasCanvas(Canvas canvas, int bitmap);
-    private static native boolean nUploadAtlas(GraphicBuffer buffer, int bitmap);
+    private static native long nAcquireAtlasCanvas(Canvas canvas, int width, int height);
+    private static native void nReleaseAtlasCanvas(Canvas canvas, long bitmap);
+    private static native boolean nUploadAtlas(GraphicBuffer buffer, long bitmap);
 
     @Override
     public boolean isCompatible(int ppid) {
@@ -380,7 +378,7 @@ public class AssetAtlasService extends IAssetAtlas.Stub {
     }
 
     @Override
-    public int[] getMap() throws RemoteException {
+    public long[] getMap() throws RemoteException {
         return mAtlasReady.get() ? mAtlasMap : null;
     }
 

@@ -9060,9 +9060,9 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
      */
     public interface OnLayoutChangeListener {
         /**
-         * Called when the focus state of a view has changed.
+         * Called when the layout bounds of a view changes due to layout processing.
          *
-         * @param v The view whose state has changed.
+         * @param v The view whose bounds have changed.
          * @param left The new value of the view's left property.
          * @param top The new value of the view's top property.
          * @param right The new value of the view's right property.
@@ -10098,7 +10098,7 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
      * by the layout system and should not generally be called otherwise, because the property
      * may be changed at any time by the layout.
      *
-     * @param left The bottom of this view, in pixels.
+     * @param left The left of this view, in pixels.
      */
     public final void setLeft(int left) {
         if (left != mLeft) {
@@ -10165,7 +10165,7 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
      * by the layout system and should not generally be called otherwise, because the property
      * may be changed at any time by the layout.
      *
-     * @param right The bottom of this view, in pixels.
+     * @param right The right of this view, in pixels.
      */
     public final void setRight(int right) {
         if (right != mRight) {
@@ -10303,7 +10303,7 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
     }
 
     /**
-     * The horizontal location of this view relative to its {@link #getTop() top} position.
+     * The vertical location of this view relative to its {@link #getTop() top} position.
      * This position is post-layout, in addition to wherever the object's
      * layout placed it.
      *
@@ -11838,7 +11838,7 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
     }
 
     /**
-     * <p>Compute the vertical extent of the horizontal scrollbar's thumb
+     * <p>Compute the vertical extent of the vertical scrollbar's thumb
      * within the vertical range. This value is used to compute the length
      * of the thumb within the scrollbar's track.</p>
      *

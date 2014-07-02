@@ -174,6 +174,12 @@ static jclass   gRegion_class;
 static jfieldID gRegion_nativeInstanceID;
 static jmethodID gRegion_constructorMethodID;
 
+static jclass    gByte_class;
+static jobject   gVMRuntime;
+static jclass    gVMRuntime_class;
+static jmethodID gVMRuntime_newNonMovableArray;
+static jmethodID gVMRuntime_addressOf;
+
 ///////////////////////////////////////////////////////////////////////////////
 
 void GraphicsJNI::get_jrect(JNIEnv* env, jobject obj, int* L, int* T, int* R, int* B)
@@ -287,7 +293,8 @@ SkBitmap* GraphicsJNI::getNativeBitmap(JNIEnv* env, jobject bitmap) {
     SkASSERT(env);
     SkASSERT(bitmap);
     SkASSERT(env->IsInstanceOf(bitmap, gBitmap_class));
-    SkBitmap* b = (SkBitmap*)env->GetIntField(bitmap, gBitmap_nativeInstanceID);
+    jlong bitmapHandle = env->GetLongField(bitmap, gBitmap_nativeInstanceID);
+    SkBitmap* b = reinterpret_cast<SkBitmap*>(bitmapHandle);
     SkASSERT(b);
     return b;
 }
@@ -310,7 +317,8 @@ SkCanvas* GraphicsJNI::getNativeCanvas(JNIEnv* env, jobject canvas) {
     SkASSERT(env);
     SkASSERT(canvas);
     SkASSERT(env->IsInstanceOf(canvas, gCanvas_class));
-    SkCanvas* c = (SkCanvas*)env->GetIntField(canvas, gCanvas_nativeInstanceID);
+    jlong canvasHandle = env->GetLongField(canvas, gCanvas_nativeInstanceID);
+    SkCanvas* c = reinterpret_cast<SkCanvas*>(canvasHandle);
     SkASSERT(c);
     return c;
 }
@@ -319,7 +327,8 @@ SkPaint* GraphicsJNI::getNativePaint(JNIEnv* env, jobject paint) {
     SkASSERT(env);
     SkASSERT(paint);
     SkASSERT(env->IsInstanceOf(paint, gPaint_class));
-    SkPaint* p = (SkPaint*)env->GetIntField(paint, gPaint_nativeInstanceID);
+    jlong paintHandle = env->GetLongField(paint, gPaint_nativeInstanceID);
+    SkPaint* p = reinterpret_cast<SkPaint*>(paintHandle);
     SkASSERT(p);
     return p;
 }
@@ -329,7 +338,8 @@ SkPicture* GraphicsJNI::getNativePicture(JNIEnv* env, jobject picture)
     SkASSERT(env);
     SkASSERT(picture);
     SkASSERT(env->IsInstanceOf(picture, gPicture_class));
-    SkPicture* p = (SkPicture*)env->GetIntField(picture, gPicture_nativeInstanceID);
+    jlong pictureHandle = env->GetLongField(picture, gPicture_nativeInstanceID);
+    SkPicture* p = reinterpret_cast<SkPicture*>(pictureHandle);
     SkASSERT(p);
     return p;
 }
@@ -339,7 +349,8 @@ SkRegion* GraphicsJNI::getNativeRegion(JNIEnv* env, jobject region)
     SkASSERT(env);
     SkASSERT(region);
     SkASSERT(env->IsInstanceOf(region, gRegion_class));
-    SkRegion* r = (SkRegion*)env->GetIntField(region, gRegion_nativeInstanceID);
+    jlong regionHandle = env->GetLongField(region, gRegion_nativeInstanceID);
+    SkRegion* r = reinterpret_cast<SkRegion*>(regionHandle);
     SkASSERT(r);
     return r;
 }
@@ -371,7 +382,7 @@ jobject GraphicsJNI::createBitmap(JNIEnv* env, SkBitmap* bitmap, jbyteArray buff
     assert_premultiplied(*bitmap, isPremultiplied);
 
     jobject obj = env->NewObject(gBitmap_class, gBitmap_constructorMethodID,
-            static_cast<jint>(reinterpret_cast<uintptr_t>(bitmap)), buffer,
+            reinterpret_cast<jlong>(bitmap), buffer,
             bitmap->width(), bitmap->height(), density, isMutable, isPremultiplied,
             ninepatch, layoutbounds);
     hasException(env); // For the side effect of logging.
@@ -406,7 +417,7 @@ jobject GraphicsJNI::createBitmapRegionDecoder(JNIEnv* env, SkBitmapRegionDecode
 
     jobject obj = env->NewObject(gBitmapRegionDecoder_class,
             gBitmapRegionDecoder_constructorMethodID,
-            static_cast<jint>(reinterpret_cast<uintptr_t>(bitmap)));
+            reinterpret_cast<jlong>(bitmap));
     hasException(env); // For the side effect of logging.
     return obj;
 }
@@ -415,7 +426,7 @@ jobject GraphicsJNI::createRegion(JNIEnv* env, SkRegion* region)
 {
     SkASSERT(region != NULL);
     jobject obj = env->NewObject(gRegion_class, gRegion_constructorMethodID,
-            static_cast<jint>(reinterpret_cast<uintptr_t>(region)), 0);
+                                 reinterpret_cast<jlong>(region), 0);
     hasException(env); // For the side effect of logging.
     return obj;
 }
@@ -550,8 +561,6 @@ void AndroidPixelRef::globalUnref() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-extern "C" jbyte* jniGetNonMovableArrayElements(C_JNIEnv* env, jarray arrayObj);
-
 jbyteArray GraphicsJNI::allocateJavaPixelRef(JNIEnv* env, SkBitmap* bitmap,
                                              SkColorTable* ctable) {
     Sk64 size64 = bitmap->getSize64();
@@ -569,19 +578,24 @@ jbyteArray GraphicsJNI::allocateJavaPixelRef(JNIEnv* env, SkBitmap* bitmap,
     }
 
     size_t size = size64.get32();
-    jbyteArray arrayObj = env->NewByteArray(size);
-    if (arrayObj) {
-        // TODO: make this work without jniGetNonMovableArrayElements
-        jbyte* addr = jniGetNonMovableArrayElements(&env->functions, arrayObj);
-        if (addr) {
-            SkPixelRef* pr = new AndroidPixelRef(env, bitmapInfo, (void*) addr,
-                    bitmap->rowBytes(), arrayObj, ctable);
-            bitmap->setPixelRef(pr)->unref();
-            // since we're already allocated, we lockPixels right away
-            // HeapAllocator behaves this way too
-            bitmap->lockPixels();
-        }
+    jbyteArray arrayObj = (jbyteArray) env->CallObjectMethod(gVMRuntime,
+                                                             gVMRuntime_newNonMovableArray,
+                                                             gByte_class, size);
+    if (env->ExceptionCheck() != 0) {
+        return NULL;
     }
+    SkASSERT(arrayObj);
+    jbyte* addr = (jbyte*) env->CallLongMethod(gVMRuntime, gVMRuntime_addressOf, arrayObj);
+    if (env->ExceptionCheck() != 0) {
+        return NULL;
+    }
+    SkASSERT(addr);
+    SkPixelRef* pr = new AndroidPixelRef(env, bitmapInfo, (void*) addr,
+            bitmap->rowBytes(), arrayObj, ctable);
+    bitmap->setPixelRef(pr)->unref();
+    // since we're already allocated, we lockPixels right away
+    // HeapAllocator behaves this way too
+    bitmap->lockPixels();
 
     return arrayObj;
 }
@@ -630,7 +644,7 @@ static jclass make_globalref(JNIEnv* env, const char classname[])
 {
     jclass c = env->FindClass(classname);
     SkASSERT(c);
-    return (jclass)env->NewGlobalRef(c);
+    return (jclass) env->NewGlobalRef(c);
 }
 
 static jfieldID getFieldIDCheck(JNIEnv* env, jclass clazz,
@@ -667,30 +681,41 @@ int register_android_graphics_Graphics(JNIEnv* env)
     gPointF_yFieldID = getFieldIDCheck(env, gPointF_class, "y", "F");
 
     gBitmap_class = make_globalref(env, "android/graphics/Bitmap");
-    gBitmap_nativeInstanceID = getFieldIDCheck(env, gBitmap_class, "mNativeBitmap", "I");
-    gBitmap_constructorMethodID = env->GetMethodID(gBitmap_class, "<init>", "(I[BIIIZZ[B[I)V");
+    gBitmap_nativeInstanceID = getFieldIDCheck(env, gBitmap_class, "mNativeBitmap", "J");
+    gBitmap_constructorMethodID = env->GetMethodID(gBitmap_class, "<init>", "(J[BIIIZZ[B[I)V");
     gBitmap_reinitMethodID = env->GetMethodID(gBitmap_class, "reinit", "(IIZ)V");
     gBitmap_getAllocationByteCountMethodID = env->GetMethodID(gBitmap_class, "getAllocationByteCount", "()I");
     gBitmapRegionDecoder_class = make_globalref(env, "android/graphics/BitmapRegionDecoder");
-    gBitmapRegionDecoder_constructorMethodID = env->GetMethodID(gBitmapRegionDecoder_class, "<init>", "(I)V");
+    gBitmapRegionDecoder_constructorMethodID = env->GetMethodID(gBitmapRegionDecoder_class, "<init>", "(J)V");
 
     gBitmapConfig_class = make_globalref(env, "android/graphics/Bitmap$Config");
     gBitmapConfig_nativeInstanceID = getFieldIDCheck(env, gBitmapConfig_class,
                                                      "nativeInt", "I");
 
     gCanvas_class = make_globalref(env, "android/graphics/Canvas");
-    gCanvas_nativeInstanceID = getFieldIDCheck(env, gCanvas_class, "mNativeCanvas", "I");
+    gCanvas_nativeInstanceID = getFieldIDCheck(env, gCanvas_class, "mNativeCanvas", "J");
 
     gPaint_class = make_globalref(env, "android/graphics/Paint");
-    gPaint_nativeInstanceID = getFieldIDCheck(env, gPaint_class, "mNativePaint", "I");
+    gPaint_nativeInstanceID = getFieldIDCheck(env, gPaint_class, "mNativePaint", "J");
 
     gPicture_class = make_globalref(env, "android/graphics/Picture");
-    gPicture_nativeInstanceID = getFieldIDCheck(env, gPicture_class, "mNativePicture", "I");
+    gPicture_nativeInstanceID = getFieldIDCheck(env, gPicture_class, "mNativePicture", "J");
 
     gRegion_class = make_globalref(env, "android/graphics/Region");
-    gRegion_nativeInstanceID = getFieldIDCheck(env, gRegion_class, "mNativeRegion", "I");
+    gRegion_nativeInstanceID = getFieldIDCheck(env, gRegion_class, "mNativeRegion", "J");
     gRegion_constructorMethodID = env->GetMethodID(gRegion_class, "<init>",
-        "(II)V");
+        "(JI)V");
+
+    c = env->FindClass("java/lang/Byte");
+    gByte_class = (jclass) env->NewGlobalRef(
+        env->GetStaticObjectField(c, env->GetStaticFieldID(c, "TYPE", "Ljava/lang/Class;")));
+
+    gVMRuntime_class = make_globalref(env, "dalvik/system/VMRuntime");
+    m = env->GetStaticMethodID(gVMRuntime_class, "getRuntime", "()Ldalvik/system/VMRuntime;");
+    gVMRuntime = env->NewGlobalRef(env->CallStaticObjectMethod(gVMRuntime_class, m));
+    gVMRuntime_newNonMovableArray = env->GetMethodID(gVMRuntime_class, "newNonMovableArray",
+                                                     "(Ljava/lang/Class;I)Ljava/lang/Object;");
+    gVMRuntime_addressOf = env->GetMethodID(gVMRuntime_class, "addressOf", "(Ljava/lang/Object;)J");
 
     return 0;
 }

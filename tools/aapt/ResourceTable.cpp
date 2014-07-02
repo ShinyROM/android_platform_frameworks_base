@@ -25,7 +25,7 @@ status_t compileXmlFile(const sp<AaptAssets>& assets,
     if (root == NULL) {
         return UNKNOWN_ERROR;
     }
-    
+
     return compileXmlFile(assets, root, target, table, options);
 }
 
@@ -577,13 +577,13 @@ status_t parseAndAddBag(Bundle* bundle,
                         int32_t curFormat,
                         bool isFormatted,
                         const String16& product,
-                        bool pseudolocalize,
+                        PseudolocalizationMethod pseudolocalize,
                         const bool overwrite,
                         ResourceTable* outTable)
 {
     status_t err;
     const String16 item16("item");
-    
+
     String16 str;
     Vector<StringPool::entry_style_span> spans;
     err = parseStyledString(bundle, in->getPrintableSource().string(),
@@ -672,7 +672,7 @@ status_t parseAndAddEntry(Bundle* bundle,
                         int32_t curFormat,
                         bool isFormatted,
                         const String16& product,
-                        bool pseudolocalize,
+                        PseudolocalizationMethod pseudolocalize,
                         const bool overwrite,
                         KeyedVector<type_ident_pair_t, bool>* skippedResourceNames,
                         ResourceTable* outTable)
@@ -854,10 +854,31 @@ status_t compileResourceFile(Bundle* bundle,
     ResTable_config curParams(defParams);
 
     ResTable_config pseudoParams(curParams);
-        pseudoParams.language[0] = 'z';
-        pseudoParams.language[1] = 'z';
-        pseudoParams.country[0] = 'Z';
-        pseudoParams.country[1] = 'Z';
+        pseudoParams.language[0] = 'e';
+        pseudoParams.language[1] = 'n';
+        pseudoParams.country[0] = 'X';
+        pseudoParams.country[1] = 'A';
+
+    ResTable_config pseudoBidiParams(curParams);
+        pseudoBidiParams.language[0] = 'a';
+        pseudoBidiParams.language[1] = 'r';
+        pseudoBidiParams.country[0] = 'X';
+        pseudoBidiParams.country[1] = 'B';
+
+    // We should skip resources for pseudolocales if they were
+    // already added automatically. This is a fix for a transition period when
+    // manually pseudolocalized resources may be expected.
+    // TODO: remove this check after next SDK version release.
+    if ((bundle->getPseudolocalize() & PSEUDO_ACCENTED &&
+         curParams.locale == pseudoParams.locale) ||
+        (bundle->getPseudolocalize() & PSEUDO_BIDI &&
+         curParams.locale == pseudoBidiParams.locale)) {
+        SourcePos(in->getPrintableSource(), 0).warning(
+                "Resource file %s is skipped as pseudolocalization"
+                " was done automatically.",
+                in->getPrintableSource().string());
+        return NO_ERROR;
+    }
 
     while ((code=block.next()) != ResXMLTree::END_DOCUMENT && code != ResXMLTree::BAD_DOCUMENT) {
         if (code == ResXMLTree::START_TAG) {
@@ -1292,8 +1313,8 @@ status_t compileResourceFile(Bundle* bundle,
                 curIsStyled = true;
             } else if (strcmp16(block.getElementName(&len), string16.string()) == 0) {
                 // Note the existence and locale of every string we process
-                char rawLocale[16];
-                curParams.getLocale(rawLocale);
+                char rawLocale[RESTABLE_MAX_LOCALE_LEN];
+                curParams.getBcp47Locale(rawLocale);
                 String8 locale(rawLocale);
                 String16 name;
                 String16 translatable;
@@ -1317,9 +1338,9 @@ status_t compileResourceFile(Bundle* bundle,
                         curIsFormatted = false;
                         // Untranslatable strings must only exist in the default [empty] locale
                         if (locale.size() > 0) {
-                            fprintf(stderr, "aapt: warning: string '%s' in %s marked untranslatable but exists"
-                                    " in locale '%s'\n", String8(name).string(),
-                                    bundle->getResourceSourceDirs()[0],
+                            SourcePos(in->getPrintableSource(), block.getLineNumber()).warning(
+                                    "string '%s' marked untranslatable but exists in locale '%s'\n",
+                                    String8(name).string(),
                                     locale.string());
                             // hasErrors = localHasErrors = true;
                         } else {
@@ -1330,7 +1351,10 @@ status_t compileResourceFile(Bundle* bundle,
                             // having no default translation.
                         }
                     } else {
-                        outTable->addLocalization(name, locale);
+                        outTable->addLocalization(
+                                name,
+                                locale,
+                                SourcePos(in->getPrintableSource(), block.getLineNumber()));
                     }
 
                     if (formatted == false16) {
@@ -1342,7 +1366,7 @@ status_t compileResourceFile(Bundle* bundle,
                 curType = string16;
                 curFormat = ResTable_map::TYPE_REFERENCE|ResTable_map::TYPE_STRING;
                 curIsStyled = true;
-                curIsPseudolocalizable = true;
+                curIsPseudolocalizable = fileIsTranslatable && (translatable != false16);
             } else if (strcmp16(block.getElementName(&len), drawable16.string()) == 0) {
                 curTag = &drawable16;
                 curType = drawable16;
@@ -1386,6 +1410,7 @@ status_t compileResourceFile(Bundle* bundle,
                 curTag = &plurals16;
                 curType = plurals16;
                 curIsBag = true;
+                curIsPseudolocalizable = fileIsTranslatable;
             } else if (strcmp16(block.getElementName(&len), array16.string()) == 0) {
                 curTag = &array16;
                 curType = array16;
@@ -1407,16 +1432,23 @@ status_t compileResourceFile(Bundle* bundle,
             } else if (strcmp16(block.getElementName(&len), string_array16.string()) == 0) {
                 // Check whether these strings need valid formats.
                 // (simplified form of what string16 does above)
+                bool isTranslatable = false;
                 size_t n = block.getAttributeCount();
+
+                // Pseudolocalizable by default, unless this string array isn't
+                // translatable.
                 for (size_t i = 0; i < n; i++) {
                     size_t length;
                     const uint16_t* attr = block.getAttributeName(i, &length);
-                    if (strcmp16(attr, translatable16.string()) == 0
-                            || strcmp16(attr, formatted16.string()) == 0) {
+                    if (strcmp16(attr, formatted16.string()) == 0) {
                         const uint16_t* value = block.getAttributeStringValue(i, &length);
                         if (strcmp16(value, false16.string()) == 0) {
                             curIsFormatted = false;
-                            break;
+                        }
+                    } else if (strcmp16(attr, translatable16.string()) == 0) {
+                        const uint16_t* value = block.getAttributeStringValue(i, &length);
+                        if (strcmp16(value, false16.string()) == 0) {
+                            isTranslatable = false;
                         }
                     }
                 }
@@ -1426,7 +1458,7 @@ status_t compileResourceFile(Bundle* bundle,
                 curFormat = ResTable_map::TYPE_REFERENCE|ResTable_map::TYPE_STRING;
                 curIsBag = true;
                 curIsBagReplaceOnOverwrite = true;
-                curIsPseudolocalizable = true;
+                curIsPseudolocalizable = isTranslatable && fileIsTranslatable;
             } else if (strcmp16(block.getElementName(&len), integer_array16.string()) == 0) {
                 curTag = &integer_array16;
                 curType = array16;
@@ -1548,19 +1580,29 @@ status_t compileResourceFile(Bundle* bundle,
 
                         err = parseAndAddBag(bundle, in, &block, curParams, myPackage, curType,
                                 ident, parentIdent, itemIdent, curFormat, curIsFormatted,
-                                product, false, overwrite, outTable);
+                                product, NO_PSEUDOLOCALIZATION, overwrite, outTable);
                         if (err == NO_ERROR) {
                             if (curIsPseudolocalizable && localeIsDefined(curParams)
-                                    && bundle->getPseudolocalize()) {
+                                    && bundle->getPseudolocalize() > 0) {
                                 // pseudolocalize here
-#if 1
-                                block.setPosition(parserPosition);
-                                err = parseAndAddBag(bundle, in, &block, pseudoParams, myPackage,
-                                        curType, ident, parentIdent, itemIdent, curFormat,
-                                        curIsFormatted, product, true, overwrite, outTable);
-#endif
+                                if ((PSEUDO_ACCENTED & bundle->getPseudolocalize()) ==
+                                   PSEUDO_ACCENTED) {
+                                    block.setPosition(parserPosition);
+                                    err = parseAndAddBag(bundle, in, &block, pseudoParams, myPackage,
+                                            curType, ident, parentIdent, itemIdent, curFormat,
+                                            curIsFormatted, product, PSEUDO_ACCENTED,
+                                            overwrite, outTable);
+                                }
+                                if ((PSEUDO_BIDI & bundle->getPseudolocalize()) ==
+                                   PSEUDO_BIDI) {
+                                    block.setPosition(parserPosition);
+                                    err = parseAndAddBag(bundle, in, &block, pseudoBidiParams, myPackage,
+                                            curType, ident, parentIdent, itemIdent, curFormat,
+                                            curIsFormatted, product, PSEUDO_BIDI,
+                                            overwrite, outTable);
+                                }
                             }
-                        } 
+                        }
                         if (err != NO_ERROR) {
                             hasErrors = localHasErrors = true;
                         }
@@ -1581,20 +1623,31 @@ status_t compileResourceFile(Bundle* bundle,
 
                 err = parseAndAddEntry(bundle, in, &block, curParams, myPackage, curType, ident,
                         *curTag, curIsStyled, curFormat, curIsFormatted,
-                        product, false, overwrite, &skippedResourceNames, outTable);
+                        product, NO_PSEUDOLOCALIZATION, overwrite, &skippedResourceNames, outTable);
 
                 if (err < NO_ERROR) { // Why err < NO_ERROR instead of err != NO_ERROR?
                     hasErrors = localHasErrors = true;
                 }
                 else if (err == NO_ERROR) {
                     if (curIsPseudolocalizable && localeIsDefined(curParams)
-                            && bundle->getPseudolocalize()) {
+                            && bundle->getPseudolocalize() > 0) {
                         // pseudolocalize here
-                        block.setPosition(parserPosition);
-                        err = parseAndAddEntry(bundle, in, &block, pseudoParams, myPackage, curType,
-                                ident, *curTag, curIsStyled, curFormat,
-                                curIsFormatted, product,
-                                true, overwrite, &skippedResourceNames, outTable);
+                        if ((PSEUDO_ACCENTED & bundle->getPseudolocalize()) ==
+                           PSEUDO_ACCENTED) {
+                            block.setPosition(parserPosition);
+                            err = parseAndAddEntry(bundle, in, &block, pseudoParams, myPackage, curType,
+                                    ident, *curTag, curIsStyled, curFormat,
+                                    curIsFormatted, product,
+                                    PSEUDO_ACCENTED, overwrite, &skippedResourceNames, outTable);
+                        }
+                        if ((PSEUDO_BIDI & bundle->getPseudolocalize()) ==
+                           PSEUDO_BIDI) {
+                            block.setPosition(parserPosition);
+                            err = parseAndAddEntry(bundle, in, &block, pseudoBidiParams,
+                                    myPackage, curType, ident, *curTag, curIsStyled, curFormat,
+                                    curIsFormatted, product,
+                                    PSEUDO_BIDI, overwrite, &skippedResourceNames, outTable);
+                        }
                         if (err != NO_ERROR) {
                             hasErrors = localHasErrors = true;
                         }
@@ -2562,9 +2615,9 @@ status_t ResourceTable::addSymbols(const sp<AaptSymbols>& outSymbols) {
 
 
 void
-ResourceTable::addLocalization(const String16& name, const String8& locale)
+ResourceTable::addLocalization(const String16& name, const String8& locale, const SourcePos& src)
 {
-    mLocalizations[name].insert(locale);
+    mLocalizations[name][locale] = src;
 }
 
 
@@ -2584,21 +2637,22 @@ ResourceTable::validateLocalizations(void)
     const String8 defaultLocale;
 
     // For all strings...
-    for (map<String16, set<String8> >::iterator nameIter = mLocalizations.begin();
+    for (map<String16, map<String8, SourcePos> >::iterator nameIter = mLocalizations.begin();
          nameIter != mLocalizations.end();
          nameIter++) {
-        const set<String8>& configSet = nameIter->second;   // naming convenience
+        const map<String8, SourcePos>& configSrcMap = nameIter->second;
 
         // Look for strings with no default localization
-        if (configSet.count(defaultLocale) == 0) {
-            fprintf(stdout, "aapt: warning: string '%s' has no default translation in %s; found:",
-                    String8(nameIter->first).string(), mBundle->getResourceSourceDirs()[0]);
-            for (set<String8>::const_iterator locales = configSet.begin();
-                 locales != configSet.end();
-                 locales++) {
-                fprintf(stdout, " %s", (*locales).string());
+        if (configSrcMap.count(defaultLocale) == 0) {
+            SourcePos().warning("string '%s' has no default translation.",
+                    String8(nameIter->first).string());
+            if (mBundle->getVerbose()) {
+                for (map<String8, SourcePos>::const_iterator locales = configSrcMap.begin();
+                    locales != configSrcMap.end();
+                    locales++) {
+                    locales->second.printf("locale %s found", locales->first.string());
+                }
             }
-            fprintf(stdout, "\n");
             // !!! TODO: throw an error here in some circumstances
         }
 
@@ -2608,6 +2662,8 @@ ResourceTable::validateLocalizations(void)
             const char* start = allConfigs;
             const char* comma;
             
+            set<String8> missingConfigs;
+            AaptLocaleValue locale;
             do {
                 String8 config;
                 comma = strchr(start, ',');
@@ -2618,27 +2674,38 @@ ResourceTable::validateLocalizations(void)
                     config.setTo(start);
                 }
 
-                // don't bother with the pseudolocale "zz_ZZ"
-                if (config != "zz_ZZ") {
-                    if (configSet.find(config) == configSet.end()) {
+                if (!locale.initFromFilterString(config)) {
+                    continue;
+                }
+
+                // don't bother with the pseudolocale "en_XA" or "ar_XB"
+                if (config != "en_XA" && config != "ar_XB") {
+                    if (configSrcMap.find(config) == configSrcMap.end()) {
                         // okay, no specific localization found.  it's possible that we are
                         // requiring a specific regional localization [e.g. de_DE] but there is an
                         // available string in the generic language localization [e.g. de];
                         // consider that string to have fulfilled the localization requirement.
                         String8 region(config.string(), 2);
-                        if (configSet.find(region) == configSet.end()) {
-                            if (configSet.count(defaultLocale) == 0) {
-                                fprintf(stdout, "aapt: warning: "
-                                        "**** string '%s' has no default or required localization "
-                                        "for '%s' in %s\n",
-                                        String8(nameIter->first).string(),
-                                        config.string(),
-                                        mBundle->getResourceSourceDirs()[0]);
-                            }
+                        if (configSrcMap.find(region) == configSrcMap.end() &&
+                                configSrcMap.count(defaultLocale) == 0) {
+                            missingConfigs.insert(config);
                         }
                     }
                 }
-           } while (comma != NULL);
+            } while (comma != NULL);
+
+            if (!missingConfigs.empty()) {
+                String8 configStr;
+                for (set<String8>::iterator iter = missingConfigs.begin();
+                     iter != missingConfigs.end();
+                     iter++) {
+                    configStr.appendFormat(" %s", iter->string());
+                }
+                SourcePos().warning("string '%s' is missing %u required localizations:%s",
+                        String8(nameIter->first).string(),
+                        (unsigned int)missingConfigs.size(),
+                        configStr.string());
+            }
         }
     }
 

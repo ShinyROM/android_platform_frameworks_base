@@ -243,25 +243,26 @@ public class WifiStateMachine extends StateMachine {
             mWifiStateMachine = wifiStateMachine;
         }
 
-        @Override
-        public void addressUpdated(String address, String iface, int flags, int scope) {
-            if (mWifiStateMachine.mInterfaceName.equals(iface)) {
-                if (DBG) {
-                    log("addressUpdated: " + address + " on " + iface +
-                        " flags " + flags + " scope " + scope);
-                }
-                mWifiStateMachine.sendMessage(CMD_IP_ADDRESS_UPDATED, new LinkAddress(address));
+        private void maybeLog(String operation, String iface, LinkAddress address) {
+            if (DBG) {
+                log(operation + ": " + address + " on " + iface +
+                    " flags " + address.getFlags() + " scope " + address.getScope());
             }
         }
 
         @Override
-        public void addressRemoved(String address, String iface, int flags, int scope) {
+        public void addressUpdated(String iface, LinkAddress address) {
             if (mWifiStateMachine.mInterfaceName.equals(iface)) {
-                if (DBG) {
-                    log("addressRemoved: " + address + " on " + iface +
-                        " flags " + flags + " scope " + scope);
-                }
-                mWifiStateMachine.sendMessage(CMD_IP_ADDRESS_REMOVED, new LinkAddress(address));
+                maybeLog("addressUpdated", iface, address);
+                mWifiStateMachine.sendMessage(CMD_IP_ADDRESS_UPDATED, address);
+            }
+        }
+
+        @Override
+        public void addressRemoved(String iface, LinkAddress address) {
+            if (mWifiStateMachine.mInterfaceName.equals(iface)) {
+                maybeLog("addressRemoved", iface, address);
+                mWifiStateMachine.sendMessage(CMD_IP_ADDRESS_REMOVED, address);
             }
         }
     }

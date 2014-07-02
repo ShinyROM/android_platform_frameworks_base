@@ -79,7 +79,7 @@ private:
     };
 
     status_t initTexture(Texture* texture, AssetManager& asset, const char* name);
-    status_t initTexture(void* buffer, size_t len);
+    status_t initTexture(const Animation::Frame& frame);
     bool android();
     bool movie();
 
@@ -95,8 +95,7 @@ private:
     EGLDisplay  mSurface;
     sp<SurfaceControl> mFlingerSurfaceControl;
     sp<Surface> mFlingerSurface;
-    bool        mAndroidAnimation;
-    ZipFileRO   mZip;
+    ZipFileRO   *mZip;
 };
 
 // ---------------------------------------------------------------------------

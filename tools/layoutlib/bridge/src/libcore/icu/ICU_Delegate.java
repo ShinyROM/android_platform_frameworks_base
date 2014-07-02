@@ -137,6 +137,11 @@ public class ICU_Delegate {
     }
 
     @LayoutlibDelegate
+    /*package*/ static String getDisplayScriptNative(String variantCode, String locale) {
+        return "";
+    }
+
+    @LayoutlibDelegate
     /*package*/ static String getISO3CountryNative(String locale) {
         return "";
     }
@@ -164,6 +169,17 @@ public class ICU_Delegate {
     @LayoutlibDelegate
     /*package*/ static String[] getISOCountriesNative() {
         return Locale.getISOCountries();
+    }
+
+
+    @LayoutlibDelegate
+    /*package*/ static String localeForLanguageTag(String languageTag, boolean strict) {
+        return "";
+    }
+
+    @LayoutlibDelegate
+    /*package*/ static String languageTagForLocale(String locale) {
+        return "";
     }
 
     @LayoutlibDelegate
@@ -215,7 +231,7 @@ public class ICU_Delegate {
         result.percent = '%';
         result.perMill = '\u2030';
         result.monetarySeparator = ' ';
-        result.minusSign = '-';
+        result.minusSign = "-";
         result.exponentSeparator = "e";
         result.infinity = "\u221E";
         result.NaN = "NaN";
@@ -230,5 +246,15 @@ public class ICU_Delegate {
         result.percentPattern = "%f";
 
         return true;
+    }
+
+    @LayoutlibDelegate
+    /*package*/ static void setDefaultLocale(String locale) {
+        ICU.setDefaultLocale(locale);
+    }
+
+    @LayoutlibDelegate
+    /*package*/ static String getDefaultLocale() {
+        return ICU.getDefaultLocale();
     }
 }

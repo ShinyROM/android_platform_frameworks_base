@@ -213,18 +213,29 @@ void Font::drawCachedGlyphBitmap(CachedGlyphInfo* glyph, int x, int y, uint8_t* 
     int dstY = y + glyph->mBitmapTop;
 
     CacheTexture* cacheTexture = glyph->mCacheTexture;
-
-    uint32_t cacheWidth = cacheTexture->getWidth();
-    uint32_t startY = glyph->mStartY * cacheWidth;
-    uint32_t endY = startY + (glyph->mBitmapHeight * cacheWidth);
-
     PixelBuffer* pixelBuffer = cacheTexture->getPixelBuffer();
+
+    uint32_t formatSize = PixelBuffer::formatSize(pixelBuffer->getFormat());
+    uint32_t alpha_channel_offset = PixelBuffer::formatAlphaOffset(pixelBuffer->getFormat());
+    uint32_t cacheWidth = cacheTexture->getWidth();
+    uint32_t srcStride = formatSize * cacheWidth;
+    uint32_t startY = glyph->mStartY * srcStride;
+    uint32_t endY = startY + (glyph->mBitmapHeight * srcStride);
+
     const uint8_t* cacheBuffer = pixelBuffer->map();
 
     for (uint32_t cacheY = startY, bitmapY = dstY * bitmapWidth; cacheY < endY;
-            cacheY += cacheWidth, bitmapY += bitmapWidth) {
-        memcpy(&bitmap[bitmapY + dstX], &cacheBuffer[cacheY + glyph->mStartX], glyph->mBitmapWidth);
+            cacheY += srcStride, bitmapY += bitmapWidth) {
+
+        if (formatSize == 1) {
+            memcpy(&bitmap[bitmapY + dstX], &cacheBuffer[cacheY + glyph->mStartX], glyph->mBitmapWidth);
+        } else {
+            for (uint32_t i = 0; i < glyph->mBitmapWidth; ++i) {
+                bitmap[bitmapY + dstX + i] = cacheBuffer[cacheY + (glyph->mStartX + i)*formatSize + alpha_channel_offset];
+            }
+        }
     }
+
 }
 
 void Font::drawCachedGlyph(CachedGlyphInfo* glyph, float x, float hOffset, float vOffset,
@@ -405,10 +416,10 @@ void Font::render(SkPaint* paint, const char* text, uint32_t start, uint32_t len
         // If it's still not valid, we couldn't cache it, so we shouldn't
         // draw garbage; also skip empty glyphs (spaces)
         if (cachedGlyph->mIsValid && cachedGlyph->mCacheTexture) {
-            float penX = x + positions[(glyphsCount << 1)];
-            float penY = y + positions[(glyphsCount << 1) + 1];
+            int penX = x + (int) roundf(positions[(glyphsCount << 1)]);
+            int penY = y + (int) roundf(positions[(glyphsCount << 1) + 1]);
 
-            (*this.*render)(cachedGlyph, roundf(penX), roundf(penY),
+            (*this.*render)(cachedGlyph, penX, penY,
                     bitmap, bitmapW, bitmapH, bounds, positions);
         }
 

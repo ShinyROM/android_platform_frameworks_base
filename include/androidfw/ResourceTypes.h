@@ -79,7 +79,7 @@ namespace android {
  * two stretchable slices is exactly the ratio of their corresponding
  * segment lengths.
  *
- * xDivs and yDivs point to arrays of horizontal and vertical pixel
+ * xDivs and yDivs are arrays of horizontal and vertical pixel
  * indices.  The first pair of Divs (in either array) indicate the
  * starting and ending points of the first stretchable segment in that
  * axis. The next pair specifies the next stretchable segment, etc. So
@@ -92,32 +92,31 @@ namespace android {
  * go to xDiv[0] and slices 2, 6 and 10 start at xDiv[1] and end at
  * xDiv[2].
  *
- * The array pointed to by the colors field lists contains hints for
- * each of the regions.  They are ordered according left-to-right and
- * top-to-bottom as indicated above. For each segment that is a solid
- * color the array entry will contain that color value; otherwise it
- * will contain NO_COLOR.  Segments that are completely transparent
- * will always have the value TRANSPARENT_COLOR.
+ * The colors array contains hints for each of the regions. They are
+ * ordered according left-to-right and top-to-bottom as indicated above.
+ * For each segment that is a solid color the array entry will contain
+ * that color value; otherwise it will contain NO_COLOR. Segments that
+ * are completely transparent will always have the value TRANSPARENT_COLOR.
  *
  * The PNG chunk type is "npTc".
  */
 struct Res_png_9patch
 {
-    Res_png_9patch() : wasDeserialized(false), xDivs(NULL),
-                       yDivs(NULL), colors(NULL) { }
+    Res_png_9patch() : wasDeserialized(false), xDivsOffset(0),
+                       yDivsOffset(0), colorsOffset(0) { }
 
     int8_t wasDeserialized;
     int8_t numXDivs;
     int8_t numYDivs;
     int8_t numColors;
 
-    // These tell where the next section of a patch starts.
-    // For example, the first patch includes the pixels from
-    // 0 to xDivs[0]-1 and the second patch includes the pixels
-    // from xDivs[0] to xDivs[1]-1.
-    // Note: allocation/free of these pointers is left to the caller.
-    int32_t* xDivs;
-    int32_t* yDivs;
+    // The offset (from the start of this structure) to the xDivs & yDivs
+    // array for this 9patch. To get a pointer to this array, call
+    // getXDivs or getYDivs. Note that the serialized form for 9patches places
+    // the xDivs, yDivs and colors arrays immediately after the location
+    // of the Res_png_9patch struct.
+    uint32_t xDivsOffset;
+    uint32_t yDivsOffset;
 
     int32_t paddingLeft, paddingRight;
     int32_t paddingTop, paddingBottom;
@@ -129,22 +128,42 @@ struct Res_png_9patch
         // The 9 patch segment is completely transparent.
         TRANSPARENT_COLOR = 0x00000000
     };
-    // Note: allocation/free of this pointer is left to the caller.
-    uint32_t* colors;
+
+    // The offset (from the start of this structure) to the colors array
+    // for this 9patch.
+    uint32_t colorsOffset;
 
     // Convert data from device representation to PNG file representation.
     void deviceToFile();
     // Convert data from PNG file representation to device representation.
     void fileToDevice();
-    // Serialize/Marshall the patch data into a newly malloc-ed block
-    void* serialize();
-    // Serialize/Marshall the patch data
-    void serialize(void* outData);
+
+    // Serialize/Marshall the patch data into a newly malloc-ed block.
+    static void* serialize(const Res_png_9patch& patchHeader, const int32_t* xDivs,
+                           const int32_t* yDivs, const uint32_t* colors);
+    // Serialize/Marshall the patch data into |outData|.
+    static void serialize(const Res_png_9patch& patchHeader, const int32_t* xDivs,
+                           const int32_t* yDivs, const uint32_t* colors, void* outData);
     // Deserialize/Unmarshall the patch data
-    static Res_png_9patch* deserialize(const void* data);
+    static Res_png_9patch* deserialize(void* data);
     // Compute the size of the serialized data structure
-    size_t serializedSize();
-};
+    size_t serializedSize() const;
+
+    // These tell where the next section of a patch starts.
+    // For example, the first patch includes the pixels from
+    // 0 to xDivs[0]-1 and the second patch includes the pixels
+    // from xDivs[0] to xDivs[1]-1.
+    inline int32_t* getXDivs() const {
+        return reinterpret_cast<int32_t*>(reinterpret_cast<uintptr_t>(this) + xDivsOffset);
+    }
+    inline int32_t* getYDivs() const {
+        return reinterpret_cast<int32_t*>(reinterpret_cast<uintptr_t>(this) + yDivsOffset);
+    }
+    inline uint32_t* getColors() const {
+        return reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(this) + colorsOffset);
+    }
+
+} __attribute__((packed));
 
 /** ********************************************************************
  *  Base Types
@@ -808,6 +827,19 @@ struct ResTable_package
     uint32_t lastPublicKey;
 };
 
+// The most specific locale can consist of:
+//
+// - a 3 char language code
+// - a 3 char region code prefixed by a 'r'
+// - a 4 char script code prefixed by a 's'
+// - a 8 char variant code prefixed by a 'v'
+//
+// each separated by a single char separator, which sums up to a total of 24
+// chars, (25 include the string terminator) rounded up to 28 to be 4 byte
+// aligned.
+#define RESTABLE_MAX_LOCALE_LEN 28
+
+
 /**
  * Describes a particular resource configuration.
  */
@@ -828,10 +860,42 @@ struct ResTable_config
     
     union {
         struct {
-            // \0\0 means "any".  Otherwise, en, fr, etc.
+            // This field can take three different forms:
+            // - \0\0 means "any".
+            //
+            // - Two 7 bit ascii values interpreted as ISO-639-1 language
+            //   codes ('fr', 'en' etc. etc.). The high bit for both bytes is
+            //   zero.
+            //
+            // - A single 16 bit little endian packed value representing an
+            //   ISO-639-2 3 letter language code. This will be of the form:
+            //
+            //   {1, t, t, t, t, t, s, s, s, s, s, f, f, f, f, f}
+            //
+            //   bit[0, 4] = first letter of the language code
+            //   bit[5, 9] = second letter of the language code
+            //   bit[10, 14] = third letter of the language code.
+            //   bit[15] = 1 always
+            //
+            // For backwards compatibility, languages that have unambiguous
+            // two letter codes are represented in that format.
+            //
+            // The layout is always bigendian irrespective of the runtime
+            // architecture.
             char language[2];
             
-            // \0\0 means "any".  Otherwise, US, CA, etc.
+            // This field can take three different forms:
+            // - \0\0 means "any".
+            //
+            // - Two 7 bit ascii values interpreted as 2 letter region
+            //   codes ('US', 'GB' etc.). The high bit for both bytes is zero.
+            //
+            // - An UN M.49 3 digit region code. For simplicity, these are packed
+            //   in the same manner as the language codes, though we should need
+            //   only 10 bits to represent them, instead of the 15.
+            //
+            // The layout is always bigendian irrespective of the runtime
+            // architecture.
             char country[2];
         };
         uint32_t locale;
@@ -933,7 +997,7 @@ struct ResTable_config
         SDKVERSION_ANY = 0
     };
     
-    enum {
+  enum {
         MINORVERSION_ANY = 0
     };
     
@@ -1006,6 +1070,15 @@ struct ResTable_config
         uint32_t screenSizeDp;
     };
 
+    // The ISO-15924 short name for the script corresponding to this
+    // configuration. (eg. Hant, Latn, etc.). Interpreted in conjunction with
+    // the locale field.
+    char localeScript[4];
+
+    // A single BCP-47 variant subtag. Will vary in length between 5 and 8
+    // chars. Interpreted in conjunction with the locale field.
+    char localeVariant[8];
+
     void copyFromDeviceNoSwap(const ResTable_config& o);
     
     void copyFromDtoH(const ResTable_config& o);
@@ -1020,7 +1093,7 @@ struct ResTable_config
     // attrs_manifest.xml.
     enum {
         CONFIG_MCC = ACONFIGURATION_MCC,
-        CONFIG_MNC = ACONFIGURATION_MCC,
+        CONFIG_MNC = ACONFIGURATION_MNC,
         CONFIG_LOCALE = ACONFIGURATION_LOCALE,
         CONFIG_TOUCHSCREEN = ACONFIGURATION_TOUCHSCREEN,
         CONFIG_KEYBOARD = ACONFIGURATION_KEYBOARD,
@@ -1063,7 +1136,46 @@ struct ResTable_config
     // settings is the requested settings
     bool match(const ResTable_config& settings) const;
 
-    void getLocale(char str[6]) const;
+    // Get the string representation of the locale component of this
+    // Config. The maximum size of this representation will be
+    // |RESTABLE_MAX_LOCALE_LEN| (including a terminating '\0').
+    //
+    // Example: en-US, en-Latn-US, en-POSIX.
+    void getBcp47Locale(char* out) const;
+
+    // Sets the values of language, region, script and variant to the
+    // well formed BCP-47 locale contained in |in|. The input locale is
+    // assumed to be valid and no validation is performed.
+    void setBcp47Locale(const char* in);
+
+    inline void clearLocale() {
+        locale = 0;
+        memset(localeScript, 0, sizeof(localeScript));
+        memset(localeVariant, 0, sizeof(localeVariant));
+    }
+
+    // Get the 2 or 3 letter language code of this configuration. Trailing
+    // bytes are set to '\0'.
+    size_t unpackLanguage(char language[4]) const;
+    // Get the 2 or 3 letter language code of this configuration. Trailing
+    // bytes are set to '\0'.
+    size_t unpackRegion(char region[4]) const;
+
+    // Sets the language code of this configuration to the first three
+    // chars at |language|.
+    //
+    // If |language| is a 2 letter code, the trailing byte must be '\0' or
+    // the BCP-47 separator '-'.
+    void packLanguage(const char* language);
+    // Sets the region code of this configuration to the first three bytes
+    // at |region|. If |region| is a 2 letter code, the trailing byte must be '\0'
+    // or the BCP-47 separator '-'.
+    void packRegion(const char* region);
+
+    // Returns a positive integer if this config is more specific than |o|
+    // with respect to their locales, a negative integer if |o| is more specific
+    // and 0 if they're equally specific.
+    int isLocaleMoreSpecificThan(const ResTable_config &o) const;
 
     String8 toString() const;
 };
@@ -1279,14 +1391,13 @@ class ResTable
 {
 public:
     ResTable();
-    ResTable(const void* data, size_t size, void* cookie,
+    ResTable(const void* data, size_t size, const int32_t cookie,
              bool copyData=false);
     ~ResTable();
 
-    status_t add(const void* data, size_t size, void* cookie,
-                 bool copyData=false, const void* idmap = NULL);
-    status_t add(Asset* asset, void* cookie,
-                 bool copyData=false, const void* idmap = NULL);
+    status_t add(Asset* asset, const int32_t cookie, bool copyData,
+                 const void* idmap = NULL);
+    status_t add(const void *data, size_t size);
     status_t add(ResTable* src);
 
     status_t getError() const;
@@ -1534,7 +1645,7 @@ public:
     // but not the names their entries or types.
     const ResStringPool* getTableStringBlock(size_t index) const;
     // Return unique cookie identifier for the given resource table.
-    void* getTableCookie(size_t index) const;
+    int32_t getTableCookie(size_t index) const;
 
     // Return the configurations (ResTable_config) that we know about
     void getConfigurations(Vector<ResTable_config>* configs) const;
@@ -1546,18 +1657,21 @@ public:
     // Return value: on success: NO_ERROR; caller is responsible for free-ing
     // outData (using free(3)). On failure, any status_t value other than
     // NO_ERROR; the caller should not free outData.
-    status_t createIdmap(const ResTable& overlay, uint32_t originalCrc, uint32_t overlayCrc,
-                         void** outData, size_t* outSize) const;
+    status_t createIdmap(const ResTable& overlay,
+            uint32_t targetCrc, uint32_t overlayCrc,
+            const char* targetPath, const char* overlayPath,
+            void** outData, size_t* outSize) const;
 
     enum {
-        IDMAP_HEADER_SIZE_BYTES = 3 * sizeof(uint32_t),
+        IDMAP_HEADER_SIZE_BYTES = 3 * sizeof(uint32_t) + 2 * 256,
     };
     // Retrieve idmap meta-data.
     //
     // This function only requires the idmap header (the first
     // IDMAP_HEADER_SIZE_BYTES) bytes of an idmap file.
     static bool getIdmapInfo(const void* idmap, size_t size,
-                             uint32_t* pOriginalCrc, uint32_t* pOverlayCrc);
+            uint32_t* pTargetCrc, uint32_t* pOverlayCrc,
+            String8* pTargetPath, String8* pOverlayPath);
 
     void print(bool inclValues) const;
     static String8 normalizeForOutput(const char* input);
@@ -1569,7 +1683,7 @@ private:
     struct PackageGroup;
     struct bag_set;
 
-    status_t add(const void* data, size_t size, void* cookie,
+    status_t addInternal(const void* data, size_t size, const int32_t cookie,
                  Asset* asset, bool copyData, const Asset* idmap);
 
     ssize_t getResourcePackageIndex(uint32_t resID) const;

@@ -3498,8 +3498,9 @@ public class WindowManagerService extends IWindowManager.Stub
             Task newTask = mTaskIdToTask.get(groupId);
             if (newTask == null) {
                 newTask = createTask(groupId, oldTask.mStack.mStackId, oldTask.mUserId, atoken);
+            } else {
+                newTask.mAppTokens.add(atoken);
             }
-            newTask.mAppTokens.add(atoken);
         }
     }
 
@@ -5618,8 +5619,7 @@ public class WindowManagerService extends IWindowManager.Stub
 
                     // We keep on including windows until we go past a full-screen
                     // window.
-                    boolean fullscreen = ws.isFullscreen(dw, dh);
-                    including = !ws.mIsImWindow && !fullscreen;
+                    including = !ws.mIsImWindow && !ws.isFullscreen(dw, dh);
 
                     final WindowStateAnimator winAnim = ws.mWinAnimator;
                     if (maxLayer < winAnim.mSurfaceLayer) {
@@ -5644,11 +5644,6 @@ public class WindowManagerService extends IWindowManager.Stub
                     if (ws.mAppToken != null && ws.mAppToken.token == appToken &&
                             ws.isDisplayedLw()) {
                         screenshotReady = true;
-                    }
-
-                    if (fullscreen) {
-                        // No point in continuing down through windows.
-                        break;
                     }
                 }
 
@@ -9951,9 +9946,21 @@ public class WindowManagerService extends IWindowManager.Stub
                 screenRotationAnimation.kill();
             }
 
+            // Check whether the current screen contains any secure content.
+            boolean isSecure = false;
+            final WindowList windows = getDefaultWindowListLocked();
+            final int N = windows.size();
+            for (int i = 0; i < N; i++) {
+                WindowState ws = windows.get(i);
+                if (ws.isOnScreen() && (ws.mAttrs.flags & FLAG_SECURE) != 0) {
+                    isSecure = true;
+                    break;
+                }
+            }
+
             // TODO(multidisplay): rotation on main screen only.
             screenRotationAnimation = new ScreenRotationAnimation(mContext, displayContent,
-                    mFxSession, inTransaction, mPolicy.isDefaultOrientationForced());
+                    mFxSession, inTransaction, mPolicy.isDefaultOrientationForced(), isSecure);
             mAnimator.setScreenRotationAnimationLocked(displayId, screenRotationAnimation);
         }
     }

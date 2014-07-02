@@ -283,7 +283,7 @@ LOCAL_INTERMEDIATE_SOURCES := \
 			$(framework_res_source_path)/com/android/internal/R.java
 
 LOCAL_NO_STANDARD_LIBRARIES := true
-LOCAL_JAVA_LIBRARIES := bouncycastle conscrypt core core-junit ext okhttp
+LOCAL_JAVA_LIBRARIES := core-libart conscrypt okhttp core-junit bouncycastle ext
 
 LOCAL_MODULE := framework-base
 
@@ -463,8 +463,8 @@ html_dirs := \
 # Common sources for doc check and api check
 common_src_files := \
 	$(call find-other-html-files, $(html_dirs)) \
-	$(addprefix ../../libcore/, $(call libcore_to_document, $(LOCAL_PATH)/../../libcore)) \
-	$(addprefix ../../external/junit/, $(call junit_to_document, $(LOCAL_PATH)/../../external/junit))
+	$(addprefix ../../libcore/, $(libcore_to_document)) \
+	$(addprefix ../../external/junit/, $(junit_to_document))
 
 # These are relative to frameworks/base
 framework_docs_LOCAL_SRC_FILES := \
@@ -489,9 +489,9 @@ framework_docs_LOCAL_INTERMEDIATE_SOURCES := \
 	$(framework_res_source_path)/com/android/internal/R.java
 
 framework_docs_LOCAL_API_CHECK_JAVA_LIBRARIES := \
-	bouncycastle \
+	core-libart \
 	conscrypt \
-	core \
+	bouncycastle \
 	okhttp \
 	ext \
 	framework \
@@ -529,7 +529,7 @@ framework_docs_LOCAL_DROIDDOC_OPTIONS := \
     -since $(SRC_API_DIR)/17.txt 17 \
     -since $(SRC_API_DIR)/18.txt 18 \
     -since $(SRC_API_DIR)/19.txt 19 \
-		-werror -hide 113 \
+		-werror -hide 111 -hide 113 \
 		-overview $(LOCAL_PATH)/core/java/overview.html
 
 framework_docs_LOCAL_API_CHECK_ADDITIONAL_JAVA_DIR:= \
@@ -543,8 +543,7 @@ framework_docs_LOCAL_ADDITIONAL_JAVA_DIR:= \
 framework_docs_LOCAL_ADDITIONAL_DEPENDENCIES := \
     frameworks/base/docs/knowntags.txt
 
-sample_dir := development/samples/browseable
-new_sample_dir := developers/samples/android
+samples_dir := development/samples/browseable
 
 # Whitelist of valid groups, used for default TOC grouping. Each sample must
 # belong to one (and only one) group. Assign samples to groups by setting
@@ -554,165 +553,12 @@ sample_groups := -samplegroup Background \
                  -samplegroup Content \
                  -samplegroup Input \
                  -samplegroup Media \
+                 -samplegroup RenderScript \
                  -samplegroup Security \
+                 -samplegroup Sensors \
                  -samplegroup Testing \
                  -samplegroup UI \
                  -samplegroup Views
-
-# the list here should match the list of samples included in the sdk samples package
-# (see development/build/sdk.atree)
-# remove htmlified samples for now -- samples are still available through the SDK
-web_docs_sample_code_flags := \
-		-hdf android.hasSamples 1 \
-		-samplecode $(sample_dir)/BasicAccessibility \
- 		            samples/BasicAccessibility "" \
-		-samplecode $(sample_dir)/HorizontalPaging \
- 		            samples/HorizontalPaging "" \
-		-samplecode $(sample_dir)/ShareActionProvider \
- 		            samples/ShareActionProvider "" \
-		-samplecode $(sample_dir)/Styled \
- 		            samples/Styled "" \
-		-samplecode $(sample_dir)/BasicAndroidKeyStore \
- 		            samples/BasicAndroidKeyStore "" \
-		-samplecode $(sample_dir)/Basic \
- 		            samples/Basic "" \
-		-samplecode $(sample_dir)/ImmersiveMode \
- 		            samples/ImmersiveMode "" \
-		-samplecode $(sample_dir)/repeatingAlarm \
- 		            samples/repeatingAlarm "" \
-		-samplecode $(sample_dir)/TextLinkify \
- 		            samples/TextLinkify "" \
-		-samplecode $(sample_dir)/BasicMediaRouter \
- 		            samples/BasicMediaRouter "" \
-		-samplecode $(sample_dir)/BasicMultitouch \
- 		            samples/BasicMultitouch "" \
-		-samplecode $(sample_dir)/TextSwitcher \
- 		            samples/TextSwitcher "" \
-		-samplecode $(sample_dir)/ActivityInstrumentation \
- 		            samples/ActivityInstrumentation "" \
-		-samplecode $(sample_dir)/BorderlessButtons \
- 		            samples/BorderlessButtons "" \
-		-samplecode $(sample_dir)/BasicNotifications \
- 		            samples/BasicNotifications "" \
-		-samplecode $(sample_dir)/AdvancedImmersiveMode \
- 		            samples/AdvancedImmersiveMode "" \
-		-samplecode $(sample_dir)/BluetoothLeGatt \
- 		            samples/BluetoothLeGatt "" \
-		-samplecode $(sample_dir)/NetworkConnect \
- 		            samples/NetworkConnect "" \
-		-samplecode $(sample_dir)/BasicNetworking \
- 		            samples/BasicNetworking "" \
-		-samplecode $(sample_dir)/BasicMediaDecoder \
- 		            samples/BasicMediaDecoder "" \
-		-samplecode $(sample_dir)/BasicImmersiveMode \
- 		            samples/BasicImmersiveMode "" \
-		-samplecode $(sample_dir)/CustomChoiceList \
- 		            samples/CustomChoiceList "" \
-		-samplecode $(sample_dir)/BasicContactables \
- 		            samples/BasicContactables "" \
-		-samplecode $(sample_dir)/BasicGestureDetect \
- 		            samples/BasicGestureDetect "" \
-		-samplecode $(sample_dir)/DoneBar \
- 		            samples/DoneBar "" \
-		-samplecode $(sample_dir)/ListPopupMenu \
- 		            samples/ListPopupMenu "" \
-		-samplecode $(sample_dir)/AppRestrictions \
- 		            samples/AppRestrictions "" \
-		-samplecode $(sample_dir)/CustomNotifications \
- 		            samples/CustomNotifications "" \
-		-samplecode $(sample_dir)/BasicSyncAdapter \
- 		            samples/BasicSyncAdapter "" \
-		-samplecode $(sample_dir)/StorageClient \
- 		            samples/StorageClient "" 
-#		-samplecode $(sample_dir)/StorageProvider \
-# 		            samples/StorageProvider "" 
-#       -samplecode $(sample_dir)/AndroidBeamDemo \
-# 		            samples/AndroidBeamDemo "Android Beam Demo" \
-# 		-samplecode $(sample_dir)/ApiDemos \
-# 		            samples/ApiDemos "API Demos" \
-# 		-samplecode $(sample_dir)/Support4Demos \
-# 		            samples/Support4Demos "API 4+ Support Demos" \
-# 		-samplecode $(sample_dir)/Support13Demos \
-# 		            samples/Support13Demos "API 13+ Support Demos" \
-# 		-samplecode $(sample_dir)/BackupRestore \
-# 		            samples/BackupRestore "Backup and Restore" \
-#		-samplecode $(sample_dir)/BluetoothChat \
-# 		            samples/BluetoothChat "Bluetooth Chat" \
-# 		-samplecode $(sample_dir)/BusinessCard \
-# 		            samples/BusinessCard "Business Card" \
-# 		-samplecode $(sample_dir)/ContactManager \
-# 		            samples/ContactManager "Contact Manager" \
-# 		-samplecode $(sample_dir)/CubeLiveWallpaper \
-# 		            samples/CubeLiveWallpaper "Cube Live Wallpaper" \
-# 		-samplecode $(sample_dir)/Home \
-# 		            samples/Home "Home" \
-# 		-samplecode $(sample_dir)/HoneycombGallery \
-# 		            samples/HoneycombGallery "Honeycomb Gallery" \
-# 		-samplecode $(sample_dir)/JetBoy \
-# 		            samples/JetBoy "JetBoy" \
-# 		-samplecode $(sample_dir)/KeyChainDemo \
-# 		            samples/KeyChainDemo "KeyChain Demo" \
-# 		-samplecode $(sample_dir)/LunarLander \
-# 		            samples/LunarLander "Lunar Lander" \
-# 		-samplecode $(sample_dir)/training/ads-and-ux \
-# 		            samples/training/ads-and-ux "Mobile Advertisement Integration" \
-# 		-samplecode $(sample_dir)/MultiResolution \
-# 		            samples/MultiResolution "Multiple Resolutions" \
-# 		-samplecode $(sample_dir)/training/multiscreen/newsreader \
-# 		            samples/newsreader "News Reader" \
-# 		-samplecode $(sample_dir)/NotePad \
-# 		            samples/NotePad "Note Pad" \
-# 		-samplecode $(sample_dir)/SpellChecker/SampleSpellCheckerService \
-# 		            samples/SpellChecker/SampleSpellCheckerService "Spell Checker Service" \
-# 		-samplecode $(sample_dir)/SpellChecker/HelloSpellChecker \
-# 		            samples/SpellChecker/HelloSpellChecker "Spell Checker Client" \
-# 		-samplecode $(sample_dir)/SampleSyncAdapter \
-# 		            samples/SampleSyncAdapter "Sample Sync Adapter" \
-# 		-samplecode $(sample_dir)/RandomMusicPlayer \
-# 		            samples/RandomMusicPlayer "Random Music Player" \
-# 		-samplecode $(sample_dir)/RenderScript \
-# 		            samples/RenderScript "RenderScript" \
-# 		-samplecode $(sample_dir)/SearchableDictionary \
-# 		            samples/SearchableDictionary "Searchable Dictionary v2" \
-# 		-samplecode $(sample_dir)/SipDemo \
-# 		            samples/SipDemo "SIP Demo" \
-# 		-samplecode $(sample_dir)/Snake \
-# 		            samples/Snake "Snake" \
-# 		-samplecode $(sample_dir)/SoftKeyboard \
-# 		            samples/SoftKeyboard "Soft Keyboard" \
-# 		-samplecode $(sample_dir)/Spinner  \
-# 		            samples/Spinner "Spinner" \
-# 		-samplecode $(sample_dir)/SpinnerTest \
-# 		            samples/SpinnerTest "SpinnerTest" \
-# 		-samplecode $(sample_dir)/StackWidget \
-# 		            samples/StackWidget "StackView Widget" \
-# 		-samplecode $(sample_dir)/TicTacToeLib  \
-# 		            samples/TicTacToeLib "TicTacToeLib" \
-# 		-samplecode $(sample_dir)/TicTacToeMain \
-# 		            samples/TicTacToeMain "TicTacToeMain" \
-# 		-samplecode $(sample_dir)/ToyVpn \
-# 		            samples/ToyVpn "Toy VPN Client" \
-# 		-samplecode $(sample_dir)/USB \
-# 		            samples/USB "USB" \
-# 		-samplecode $(sample_dir)/WeatherListWidget \
-# 		            samples/WeatherListWidget "Weather List Widget" \
-# 		-samplecode $(sample_dir)/WiFiDirectDemo \
-#                   samples/WiFiDirectDemo "Wi-Fi Direct Demo" \
-# 		-samplecode $(sample_dir)/Wiktionary \
-# 		            samples/Wiktionary "Wiktionary" \
-# 		-samplecode $(sample_dir)/WiktionarySimple \
-# 		            samples/WiktionarySimple "Wiktionary (Simplified)" \
-# 		-samplecode $(sample_dir)/VoiceRecognitionService \
-# 		            samples/VoiceRecognitionService "Voice Recognition Service" \
-# 		-samplecode $(sample_dir)/VoicemailProviderDemo \
-# 		            samples/VoicemailProviderDemo "Voicemail Provider Demo" \
-# 		-samplecode $(sample_dir)/XmlAdapters \
-# 		            samples/XmlAdapters "XML Adapters" \
-# 		-samplecode $(sample_dir)/TtsEngine \
-# 		            samples/TtsEngine "Text To Speech Engine" \
-# 		-samplecode $(sample_dir)/training/device-management-policy \
-# 		            samples/training/device-management-policy "Device Management Policy"
-
 
 ## SDK version identifiers used in the published docs
   # major[.minor] version for current SDK. (full releases only)
@@ -723,7 +569,7 @@ framework_docs_SDK_REL_ID:=1
 framework_docs_LOCAL_DROIDDOC_OPTIONS += \
 		-hdf sdk.version $(framework_docs_SDK_VERSION) \
 		-hdf sdk.rel.id $(framework_docs_SDK_REL_ID) \
-		-hdf sdk.preview 0 \
+		-hdf sdk.preview 0
 
 # ====  the api stubs and current.xml ===========================
 include $(CLEAR_VARS)
@@ -835,8 +681,6 @@ LOCAL_DROIDDOC_OPTIONS:=\
 		-todo $(OUT_DOCS)/$(LOCAL_MODULE)-docs-todo.html \
 		-sdkvalues $(OUT_DOCS) \
 		-hdf android.whichdoc offline
-#		$(web_docs_sample_code_flags)
-
 
 LOCAL_DROIDDOC_CUSTOM_TEMPLATE_DIR:=build/tools/droiddoc/templates-sdk
 
@@ -863,7 +707,7 @@ LOCAL_DROIDDOC_SOURCE_PATH:=$(framework_docs_LOCAL_DROIDDOC_SOURCE_PATH)
 LOCAL_DROIDDOC_HTML_DIR:=$(framework_docs_LOCAL_DROIDDOC_HTML_DIR)
 LOCAL_ADDITIONAL_JAVA_DIR:=$(framework_docs_LOCAL_ADDITIONAL_JAVA_DIR)
 LOCAL_ADDITIONAL_DEPENDENCIES:=$(framework_docs_LOCAL_ADDITIONAL_DEPENDENCIES)
-LOCAL_ADDITIONAL_HTML_DIR:=docs/html-intl /intl/
+LOCAL_ADDITIONAL_HTML_DIR:=docs/html-intl /
 
 LOCAL_MODULE := online-sdk
 
@@ -872,7 +716,8 @@ LOCAL_DROIDDOC_OPTIONS:= \
 		-toroot / \
 		-hdf android.whichdoc online \
 		$(sample_groups) \
-		$(web_docs_sample_code_flags)
+		-hdf android.hasSamples true \
+		-samplesdir $(samples_dir)
 
 LOCAL_DROIDDOC_CUSTOM_TEMPLATE_DIR:=build/tools/droiddoc/templates-sdk
 
@@ -890,7 +735,7 @@ LOCAL_DROIDDOC_HTML_DIR:=$(framework_docs_LOCAL_DROIDDOC_HTML_DIR)
 LOCAL_ADDITIONAL_JAVA_DIR:=$(framework_docs_LOCAL_ADDITIONAL_JAVA_DIR)
 LOCAL_ADDITIONAL_DEPENDENCIES:=$(framework_docs_LOCAL_ADDITIONAL_DEPENDENCIES)
 # specify a second html input dir and an output path relative to OUT_DIR)
-LOCAL_ADDITIONAL_HTML_DIR:=docs/html-intl /
+LOCAL_ADDITIONAL_HTML_DIR:=docs/html-intl/intl /
 
 LOCAL_MODULE := ds
 
@@ -900,7 +745,6 @@ LOCAL_DROIDDOC_OPTIONS:= \
 		-toroot / \
 		-hdf android.whichdoc online \
 		-hdf devsite true
-#		$(web_docs_sample_code_flags)
 
 LOCAL_DROIDDOC_CUSTOM_TEMPLATE_DIR:=build/tools/droiddoc/templates-sdk
 
@@ -952,7 +796,7 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := $(ext_src_files)
 
 LOCAL_NO_STANDARD_LIBRARIES := true
-LOCAL_JAVA_LIBRARIES := core
+LOCAL_JAVA_LIBRARIES := core-libart
 LOCAL_JAVA_RESOURCE_DIRS := $(ext_res_dirs)
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := ext

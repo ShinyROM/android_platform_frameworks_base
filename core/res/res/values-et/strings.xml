@@ -314,7 +314,7 @@
     <string name="permlab_stopAppSwitches" msgid="4138608610717425573">"väldi rakenduste ümberlülitamist"</string>
     <string name="permdesc_stopAppSwitches" msgid="8262195802582255021">"Takistab kasutaja lülitumist teisele rakendusele."</string>
     <string name="permlab_getTopActivityInfo" msgid="2537922311411546016">"aktiivse rakenduse teabe hankimine"</string>
-    <string name="permdesc_getTopActivityInfo" msgid="8153651434145132505">"Lubab õiguse omanikul hankida privaatset teavet ekraani esiplaanil oleva aktiivse rakenduse ja teenuste kohta."</string>
+    <string name="permdesc_getTopActivityInfo" msgid="2512448855496067131">"Lubab õiguste saajal hankida privaatset teavet ekraanil esiplaanil oleva aktiivse rakenduse kohta."</string>
     <string name="permlab_runSetActivityWatcher" msgid="892239094867182656">"Kõigi rakenduste käivitumise jälgimine ja juhtimine"</string>
     <string name="permdesc_runSetActivityWatcher" msgid="6003603162578577406">"Võimaldab rakendusel jälgida ja juhtida, kuidas süsteem tegevusi käivitab. Pahatahtlikud rakendused võivad süsteemi täielikult rikkuda. Seda õigust on vaja ainult arenduseks, mitte tavakasutuse korral."</string>
     <string name="permlab_broadcastPackageRemoved" msgid="2576333434893532475">"saada paketist eemaldatud saade"</string>
@@ -363,7 +363,7 @@
     <string name="permlab_accessAllPrintJobs" msgid="1120792468465711159">"juurdepääs kõikidele printimistöödele"</string>
     <string name="permdesc_accessAllPrintJobs" msgid="2978185311041864762">"Lubab omanikule juurdepääsu teise rakenduse loodud printimistöödele. Tavarakenduste puhul ei peaks seda kunagi vaja minema."</string>
     <string name="permlab_bindNfcService" msgid="2752731300419410724">"NFC-teenusega sidumine"</string>
-    <string name="permdesc_bindNfcService" msgid="6120647629174066862">"Lubab õiguste omajal luua seosed rakendustega, mis emuleerivad NFC-kaarte. Pole kunagi vajalik tavaliste rakenduste korral."</string>
+    <string name="permdesc_bindNfcService" msgid="6120647629174066862">"Lubab kasutajal luua seosed rakendustega, mis jäljendavad NFC-kaarte. Pole kunagi vajalik tavaliste rakenduste korral."</string>
     <string name="permlab_bindTextService" msgid="7358378401915287938">"tekstiteenusega sidumine"</string>
     <string name="permdesc_bindTextService" msgid="8151968910973998670">"Võimaldab omanikul siduda tekstiteenuse (nt SpellCheckerService) ülataseme liidesega. Tavarakenduste puhul ei peaks seda kunagi vaja minema."</string>
     <string name="permlab_bindVpnService" msgid="4708596021161473255">"seo VPN-teenusega"</string>
@@ -407,10 +407,6 @@
     <string name="permdesc_readLogs" product="default" msgid="2063438140241560443">"Võimaldab rakendusel lugeda süsteemi erinevaid logifaile. Nii on võimalik avastada üldist teavet selle kohta, mida te telefoniga teete, mis võib kaasata ka isiklikku või privaatset teavet."</string>
     <string name="permlab_anyCodecForPlayback" msgid="715805555823881818">"Mis tahes meediumidekooderi kasutamine taasesituseks"</string>
     <string name="permdesc_anyCodecForPlayback" msgid="8283912488433189010">"Võimaldab rakendusel taasesituseks kasutada mis tahes installitud meediumidekooderit."</string>
-    <!-- no translation found for permlab_manageCaCertificates (1678391896786882014) -->
-    <skip />
-    <!-- no translation found for permdesc_manageCaCertificates (4015644047196937014) -->
-    <skip />
     <string name="permlab_diagnostic" msgid="8076743953908000342">"loe/kirjuta valija allikaid"</string>
     <string name="permdesc_diagnostic" msgid="6608295692002452283">"Võimaldab rakendusel lugeda valimisrühma mis tahes ressurssi ja sellesse kirjutada (näiteks kaustas /dev olevad failid). See võib mõjutada süsteemi stabiilsust ja turvet. Seda tohiks kasutada tootja või operaator AINULT riistvaraspetsiifiliseks diagnostikaks."</string>
     <string name="permlab_changeComponentState" msgid="6335576775711095931">"Rakenduse komponentide lubamine või keelamine"</string>
@@ -476,14 +472,18 @@
     <string name="permdesc_accessInputFlinger" msgid="2104864941201226616">"Lubab rakendusel kasutada InputFlingeri madalatasemelisi funktsioone."</string>
     <string name="permlab_configureWifiDisplay" msgid="5595661694746742168">"WiFi-ekraanide seadistamine"</string>
     <string name="permdesc_configureWifiDisplay" msgid="7916815158690218065">"Lubab rakendusel seadistada WiFi-ekraane ja nendega ühendus luua."</string>
-    <string name="permlab_controlWifiDisplay" msgid="393641276723695496">"WiFi-ekraanide juhtimine"</string>
-    <string name="permdesc_controlWifiDisplay" msgid="4543912292681826986">"Lubab rakendusel juhtida WiFi-ekraanide madala taseme funktsioone."</string>
-    <string name="permlab_captureAudioOutput" msgid="6857134498402346708">"heliväljundi jäädvustamine"</string>
-    <string name="permdesc_captureAudioOutput" msgid="6210597754212208853">"Lubab rakendusel jäädvustada ja ümber suunata heliväljundit."</string>
-    <string name="permlab_captureVideoOutput" msgid="2246828773589094023">"videoväljundi jäädvustamine"</string>
-    <string name="permdesc_captureVideoOutput" msgid="359481658034149860">"Lubab rakendusel jäädvustada ja ümber suunata videoväljundit."</string>
-    <string name="permlab_captureSecureVideoOutput" msgid="7815398969303382016">"kaitstud videoväljundi jäädvustamine"</string>
-    <string name="permdesc_captureSecureVideoOutput" msgid="2779793064709350289">"Lubab rakendusel jäädvustada ja ümber suunata kaitstud videoväljundit."</string>
+    <!-- no translation found for permlab_captureAudioOutput (6857134498402346708) -->
+    <skip />
+    <!-- no translation found for permdesc_captureAudioOutput (6210597754212208853) -->
+    <skip />
+    <!-- no translation found for permlab_captureVideoOutput (2246828773589094023) -->
+    <skip />
+    <!-- no translation found for permdesc_captureVideoOutput (359481658034149860) -->
+    <skip />
+    <!-- no translation found for permlab_captureSecureVideoOutput (7815398969303382016) -->
+    <skip />
+    <!-- no translation found for permdesc_captureSecureVideoOutput (2779793064709350289) -->
+    <skip />
     <string name="permlab_modifyAudioSettings" msgid="6095859937069146086">"muuda heliseadeid"</string>
     <string name="permdesc_modifyAudioSettings" msgid="3522565366806248517">"Võimaldab rakendusel muuta üldiseid heliseadeid, näiteks helitugevust ja seda, millist kõlarit kasutatakse väljundiks."</string>
     <string name="permlab_recordAudio" msgid="3876049771427466323">"salvesta heli"</string>
@@ -657,8 +657,6 @@
     <string name="permdesc_bindNotificationListenerService" msgid="985697918576902986">"Võimaldab omanikul siduda märguannete kuulamisteenuse ülemise taseme kasutajaliidese. Seda ei tohiks tavarakenduste puhul kunagi vaja olla."</string>
     <string name="permlab_invokeCarrierSetup" msgid="3699600833975117478">"operaatoripoolse konfiguratsioonirakenduse aktiveerimine"</string>
     <string name="permdesc_invokeCarrierSetup" msgid="4159549152529111920">"Lubab omanikul aktiveerida operaatoripoolse konfiguratsioonirakenduse. Tavarakenduste puhul ei peaks seda kunagi vaja minema."</string>
-    <string name="permlab_accessNetworkConditions" msgid="8206077447838909516">"võrgutingimuste teabe kuulamine"</string>
-    <string name="permdesc_accessNetworkConditions" msgid="6899102075825272211">"Lubab rakendusel kuulata võrgutingimuste teavet. Ei ole kunagi vajalik tavaliste rakenduste puhul."</string>
     <string name="policylab_limitPassword" msgid="4497420728857585791">"Parooli reeglite määramine"</string>
     <string name="policydesc_limitPassword" msgid="3252114203919510394">"Kontrollige ekraaniluku avamise paroolide pikkust ja tähemärke."</string>
     <string name="policylab_watchLogin" msgid="914130646942199503">"Ekraani avamiskatsed"</string>
@@ -1583,5 +1581,4 @@
     <item quantity="one" msgid="4835639969503729874">"Vale PIN-kood. Proovige 1 s pärast."</item>
     <item quantity="other" msgid="8030607343223287654">"Vale PIN-kood. Proovige <xliff:g id="COUNT">%d</xliff:g> s pärast."</item>
   </plurals>
-    <string name="immersive_mode_confirmation" msgid="8554991488096662508">"Riba kuvam. pühkige ekraani serva"</string>
 </resources>

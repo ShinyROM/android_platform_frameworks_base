@@ -21,11 +21,10 @@ import android.net.LocalSocket;
 import android.os.Process;
 import android.os.SELinux;
 import android.os.SystemProperties;
+import android.system.ErrnoException;
+import android.system.Os;
 import android.util.Log;
-
 import dalvik.system.PathClassLoader;
-import dalvik.system.Zygote;
-
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -35,11 +34,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-
-import libcore.io.ErrnoException;
 import libcore.io.IoUtils;
-import libcore.io.Libcore;
 
 /**
  * A connection that can make spawn requests.
@@ -60,7 +57,7 @@ class ZygoteConnection {
     private static final int CONNECTION_TIMEOUT_MILLIS = 1000;
 
     /** max number of arguments that a connection can specify */
-    private static final int MAX_ZYGOTE_ARGC=1024;
+    private static final int MAX_ZYGOTE_ARGC = 1024;
 
     /**
      * The command socket.
@@ -74,15 +71,18 @@ class ZygoteConnection {
     private final BufferedReader mSocketReader;
     private final Credentials peer;
     private final String peerSecurityContext;
+    private final String abiList;
 
     /**
      * Constructs instance from connected socket.
      *
      * @param socket non-null; connected socket
+     * @param abiList non-null; a list of ABIs this zygote supports.
      * @throws IOException
      */
-    ZygoteConnection(LocalSocket socket) throws IOException {
+    ZygoteConnection(LocalSocket socket, String abiList) throws IOException {
         mSocket = socket;
+        this.abiList = abiList;
 
         mSocketOutStream
                 = new DataOutputStream(socket.getOutputStream());
@@ -109,43 +109,6 @@ class ZygoteConnection {
      */
     FileDescriptor getFileDesciptor() {
         return mSocket.getFileDescriptor();
-    }
-
-    /**
-     * Reads start commands from an open command socket.
-     * Start commands are presently a pair of newline-delimited lines
-     * indicating a) class to invoke main() on b) nice name to set argv[0] to.
-     * Continues to read commands and forkAndSpecialize children until
-     * the socket is closed. This method is used in ZYGOTE_FORK_MODE
-     *
-     * @throws ZygoteInit.MethodAndArgsCaller trampoline to invoke main()
-     * method in child process
-     */
-    void run() throws ZygoteInit.MethodAndArgsCaller {
-
-        int loopCount = ZygoteInit.GC_LOOP_COUNT;
-
-        while (true) {
-            /*
-             * Call gc() before we block in readArgumentList().
-             * It's work that has to be done anyway, and it's better
-             * to avoid making every child do it.  It will also
-             * madvise() any free memory as a side-effect.
-             *
-             * Don't call it every time, because walking the entire
-             * heap is a lot of overhead to free a few hundred bytes.
-             */
-            if (loopCount <= 0) {
-                ZygoteInit.gc();
-                loopCount = ZygoteInit.GC_LOOP_COUNT;
-            } else {
-                loopCount--;
-            }
-
-            if (runOnce()) {
-                break;
-            }
-        }
     }
 
     /**
@@ -198,9 +161,18 @@ class ZygoteConnection {
         try {
             parsedArgs = new Arguments(args);
 
+            if (parsedArgs.abiListQuery) {
+                return handleAbiListQuery();
+            }
+
+            if (parsedArgs.permittedCapabilities != 0 || parsedArgs.effectiveCapabilities != 0) {
+                throw new ZygoteSecurityException("Client may not specify capabilities: " +
+                        "permitted=0x" + Long.toHexString(parsedArgs.permittedCapabilities) +
+                        ", effective=0x" + Long.toHexString(parsedArgs.effectiveCapabilities));
+            }
+
             applyUidSecurityPolicy(parsedArgs, peer, peerSecurityContext);
             applyRlimitSecurityPolicy(parsedArgs, peer, peerSecurityContext);
-            applyCapabilitiesSecurityPolicy(parsedArgs, peer, peerSecurityContext);
             applyInvokeWithSecurityPolicy(parsedArgs, peer, peerSecurityContext);
             applyseInfoSecurityPolicy(parsedArgs, peer, peerSecurityContext);
 
@@ -214,15 +186,43 @@ class ZygoteConnection {
             }
 
             if (parsedArgs.runtimeInit && parsedArgs.invokeWith != null) {
-                FileDescriptor[] pipeFds = Libcore.os.pipe();
+                FileDescriptor[] pipeFds = Os.pipe();
                 childPipeFd = pipeFds[1];
                 serverPipeFd = pipeFds[0];
                 ZygoteInit.setCloseOnExec(serverPipeFd, true);
             }
 
+            /**
+             * In order to avoid leaking descriptors to the Zygote child,
+             * the native code must close the two Zygote socket descriptors
+             * in the child process before it switches from Zygote-root to
+             * the UID and privileges of the application being launched.
+             *
+             * In order to avoid "bad file descriptor" errors when the
+             * two LocalSocket objects are closed, the Posix file
+             * descriptors are released via a dup2() call which closes
+             * the socket and substitutes an open descriptor to /dev/null.
+             */
+
+            int [] fdsToClose = { -1, -1 };
+
+            FileDescriptor fd = mSocket.getFileDescriptor();
+
+            if (fd != null) {
+                fdsToClose[0] = fd.getInt$();
+            }
+
+            fd = ZygoteInit.getServerSocketFileDescriptor();
+
+            if (fd != null) {
+                fdsToClose[1] = fd.getInt$();
+            }
+
+            fd = null;
+
             pid = Zygote.forkAndSpecialize(parsedArgs.uid, parsedArgs.gid, parsedArgs.gids,
                     parsedArgs.debugFlags, rlimits, parsedArgs.mountExternal, parsedArgs.seInfo,
-                    parsedArgs.niceName);
+                    parsedArgs.niceName, fdsToClose);
         } catch (IOException ex) {
             logAndPrintError(newStderr, "Exception creating pipe", ex);
         } catch (ErrnoException ex) {
@@ -253,6 +253,18 @@ class ZygoteConnection {
         } finally {
             IoUtils.closeQuietly(childPipeFd);
             IoUtils.closeQuietly(serverPipeFd);
+        }
+    }
+
+    private boolean handleAbiListQuery() {
+        try {
+            final byte[] abiListBytes = abiList.getBytes(StandardCharsets.US_ASCII);
+            mSocketOutStream.writeInt(abiListBytes.length);
+            mSocketOutStream.write(abiListBytes);
+            return false;
+        } catch (IOException ioe) {
+            Log.e(TAG, "Error writing to command socket", ioe);
+            return true;
         }
     }
 
@@ -355,6 +367,11 @@ class ZygoteConnection {
          * (or after a '--')
          */
         String remainingArgs[];
+
+        /**
+         * Whether the current arguments constitute an ABI list query.
+         */
+        boolean abiListQuery;
 
         /**
          * Constructs instance and parses args
@@ -509,6 +526,8 @@ class ZygoteConnection {
                     mountExternal = Zygote.MOUNT_EXTERNAL_MULTIUSER;
                 } else if (arg.equals("--mount-external-multiuser-all")) {
                     mountExternal = Zygote.MOUNT_EXTERNAL_MULTIUSER_ALL;
+                } else if (arg.equals("--query-abi-list")) {
+                    abiListQuery = true;
                 } else {
                     break;
                 }
@@ -703,71 +722,6 @@ class ZygoteConnection {
     }
 
     /**
-     * Applies zygote security policy per bug #1042973. A root peer may
-     * spawn an instance with any capabilities. All other uids may spawn
-     * instances with any of the capabilities in the peer's permitted set
-     * but no more.
-     *
-     * @param args non-null; zygote spawner arguments
-     * @param peer non-null; peer credentials
-     * @throws ZygoteSecurityException
-     */
-    private static void applyCapabilitiesSecurityPolicy(
-            Arguments args, Credentials peer, String peerSecurityContext)
-            throws ZygoteSecurityException {
-
-        if (args.permittedCapabilities == 0
-                && args.effectiveCapabilities == 0) {
-            // nothing to check
-            return;
-        }
-
-        boolean allowed = SELinux.checkSELinuxAccess(peerSecurityContext,
-                                                     peerSecurityContext,
-                                                     "zygote",
-                                                     "specifycapabilities");
-        if (!allowed) {
-            throw new ZygoteSecurityException(
-                    "Peer may not specify capabilities");
-        }
-
-        if (peer.getUid() == 0) {
-            // root may specify anything
-            return;
-        }
-
-        long permittedCaps;
-
-        try {
-            permittedCaps = ZygoteInit.capgetPermitted(peer.getPid());
-        } catch (IOException ex) {
-            throw new ZygoteSecurityException(
-                    "Error retrieving peer's capabilities.");
-        }
-
-        /*
-         * Ensure that the client did not specify an effective set larger
-         * than the permitted set. The kernel will enforce this too, but we
-         * do it here to make the following check easier.
-         */
-        if (((~args.permittedCapabilities) & args.effectiveCapabilities) != 0) {
-            throw new ZygoteSecurityException(
-                    "Effective capabilities cannot be superset of "
-                            + " permitted capabilities" );
-        }
-
-        /*
-         * Ensure that the new permitted (and thus the new effective) set is
-         * a subset of the peer process's permitted set
-         */
-
-        if (((~permittedCaps) & args.permittedCapabilities) != 0) {
-            throw new ZygoteSecurityException(
-                    "Peer specified unpermitted capabilities" );
-        }
-    }
-
-    /**
      * Applies zygote security policy.
      * Based on the credentials of the process issuing a zygote command:
      * <ol>
@@ -803,7 +757,7 @@ class ZygoteConnection {
     }
 
     /**
-     * Applies zygote security policy for SEAndroid information.
+     * Applies zygote security policy for SELinux information.
      *
      * @param args non-null; zygote spawner arguments
      * @param peer non-null; peer credentials
@@ -822,7 +776,7 @@ class ZygoteConnection {
         if (!(peerUid == 0 || peerUid == Process.SYSTEM_UID)) {
             // All peers with UID other than root or SYSTEM_UID
             throw new ZygoteSecurityException(
-                    "This UID may not specify SEAndroid info.");
+                    "This UID may not specify SELinux info.");
         }
 
         boolean allowed = SELinux.checkSELinuxAccess(peerSecurityContext,
@@ -831,7 +785,7 @@ class ZygoteConnection {
                                                      "specifyseinfo");
         if (!allowed) {
             throw new ZygoteSecurityException(
-                    "Peer may not specify SEAndroid info");
+                    "Peer may not specify SELinux info");
         }
 
         return;
@@ -840,7 +794,7 @@ class ZygoteConnection {
     /**
      * Applies invoke-with system properties to the zygote arguments.
      *
-     * @param parsedArgs non-null; zygote args
+     * @param args non-null; zygote args
      */
     public static void applyInvokeWithSystemProperty(Arguments args) {
         if (args.invokeWith == null && args.niceName != null) {
@@ -874,6 +828,12 @@ class ZygoteConnection {
     private void handleChildProc(Arguments parsedArgs,
             FileDescriptor[] descriptors, FileDescriptor pipeFd, PrintStream newStderr)
             throws ZygoteInit.MethodAndArgsCaller {
+
+        /**
+         * By the time we get here, the native code has closed the two actual Zygote
+         * socket connections, and substituted /dev/null in their place.  The LocalSocket
+         * objects still need to be closed properly.
+         */
 
         closeSocket();
         ZygoteInit.closeServerSocket();
@@ -1003,7 +963,7 @@ class ZygoteConnection {
             mSocketOutStream.writeInt(pid);
             mSocketOutStream.writeBoolean(usingWrapper);
         } catch (IOException ex) {
-            Log.e(TAG, "Error reading from command socket", ex);
+            Log.e(TAG, "Error writing to command socket", ex);
             return true;
         }
 

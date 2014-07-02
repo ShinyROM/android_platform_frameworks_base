@@ -107,17 +107,19 @@ static void scaleNinePatchChunk(android::Res_png_9patch* chunk, float scale) {
     chunk->paddingRight = int(chunk->paddingRight * scale + 0.5f);
     chunk->paddingBottom = int(chunk->paddingBottom * scale + 0.5f);
 
+    int32_t* xDivs = chunk->getXDivs();
     for (int i = 0; i < chunk->numXDivs; i++) {
-        chunk->xDivs[i] = int(chunk->xDivs[i] * scale + 0.5f);
-        if (i > 0 && chunk->xDivs[i] == chunk->xDivs[i - 1]) {
-            chunk->xDivs[i]++;
+        xDivs[i] = int32_t(xDivs[i] * scale + 0.5f);
+        if (i > 0 && xDivs[i] == xDivs[i - 1]) {
+            xDivs[i]++;
         }
     }
 
+    int32_t* yDivs = chunk->getYDivs();
     for (int i = 0; i < chunk->numYDivs; i++) {
-        chunk->yDivs[i] = int(chunk->yDivs[i] * scale + 0.5f);
-        if (i > 0 && chunk->yDivs[i] == chunk->yDivs[i - 1]) {
-            chunk->yDivs[i]++;
+        yDivs[i] = int32_t(yDivs[i] * scale + 0.5f);
+        if (i > 0 && yDivs[i] == yDivs[i - 1]) {
+            yDivs[i]++;
         }
     }
 }
@@ -286,7 +288,7 @@ static jobject doDecode(JNIEnv* env, SkStreamRewindable* stream, jobject padding
     SkBitmap* outputBitmap = NULL;
     unsigned int existingBufferSize = 0;
     if (javaBitmap != NULL) {
-        outputBitmap = (SkBitmap*) env->GetIntField(javaBitmap, gBitmap_nativeBitmapFieldID);
+        outputBitmap = (SkBitmap*) env->GetLongField(javaBitmap, gBitmap_nativeBitmapFieldID);
         if (outputBitmap->isImmutable()) {
             ALOGW("Unable to reuse an immutable bitmap as an image decoder target.");
             javaBitmap = NULL;
@@ -379,7 +381,7 @@ static jobject doDecode(JNIEnv* env, SkStreamRewindable* stream, jobject padding
             return nullObjectReturn("primitive array == null");
         }
 
-        peeker.fPatch->serialize(array);
+        memcpy(array, peeker.fPatch, peeker.fPatchSize);
         env->ReleasePrimitiveArrayCritical(ninePatchChunk, array, 0);
     }
 
@@ -566,7 +568,7 @@ static jobject nativeDecodeFileDescriptor(JNIEnv* env, jobject clazz, jobject fi
     return doDecode(env, stream, padding, bitmapFactoryOptions, isPurgeable);
 }
 
-static jobject nativeDecodeAsset(JNIEnv* env, jobject clazz, jint native_asset,
+static jobject nativeDecodeAsset(JNIEnv* env, jobject clazz, jlong native_asset,
         jobject padding, jobject options) {
 
     SkStreamRewindable* stream;
@@ -591,7 +593,7 @@ static jobject nativeDecodeAsset(JNIEnv* env, jobject clazz, jint native_asset,
 }
 
 static jobject nativeDecodeByteArray(JNIEnv* env, jobject, jbyteArray byteArray,
-        int offset, int length, jobject options) {
+        jint offset, jint length, jobject options) {
 
     /*  If optionsShareable() we could decide to just wrap the java array and
         share it, but that means adding a globalref to the java array object
@@ -628,7 +630,7 @@ static JNINativeMethod gMethods[] = {
     },
 
     {   "nativeDecodeAsset",
-        "(ILandroid/graphics/Rect;Landroid/graphics/BitmapFactory$Options;)Landroid/graphics/Bitmap;",
+        "(JLandroid/graphics/Rect;Landroid/graphics/BitmapFactory$Options;)Landroid/graphics/Bitmap;",
         (void*)nativeDecodeAsset
     },
 
@@ -681,7 +683,7 @@ int register_android_graphics_BitmapFactory(JNIEnv* env) {
 
     jclass bitmap_class = env->FindClass("android/graphics/Bitmap");
     SkASSERT(bitmap_class);
-    gBitmap_nativeBitmapFieldID = getFieldIDCheck(env, bitmap_class, "mNativeBitmap", "I");
+    gBitmap_nativeBitmapFieldID = getFieldIDCheck(env, bitmap_class, "mNativeBitmap", "J");
     gBitmap_layoutBoundsFieldID = getFieldIDCheck(env, bitmap_class, "mLayoutBounds", "[I");
     int ret = AndroidRuntime::registerNativeMethods(env,
                                     "android/graphics/BitmapFactory$Options",

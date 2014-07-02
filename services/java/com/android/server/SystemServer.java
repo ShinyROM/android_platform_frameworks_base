@@ -46,6 +46,7 @@ import android.view.WindowManager;
 
 import com.android.internal.R;
 import com.android.internal.os.BinderInternal;
+import com.android.internal.os.Zygote;
 import com.android.internal.os.SamplingProfilerIntegration;
 import com.android.server.accessibility.AccessibilityManagerService;
 import com.android.server.accounts.AccountManagerService;
@@ -59,6 +60,7 @@ import com.android.server.media.MediaRouterService;
 import com.android.server.net.NetworkPolicyManagerService;
 import com.android.server.net.NetworkStatsService;
 import com.android.server.os.SchedulingPolicyService;
+import com.android.server.pm.BackgroundDexOptService;
 import com.android.server.pm.Installer;
 import com.android.server.pm.PackageManagerService;
 import com.android.server.pm.UserManagerService;
@@ -71,7 +73,6 @@ import com.android.server.wifi.WifiService;
 import com.android.server.wm.WindowManagerService;
 
 import dalvik.system.VMRuntime;
-import dalvik.system.Zygote;
 
 import java.io.File;
 import java.util.Timer;
@@ -815,6 +816,13 @@ class ServerThread {
                 } catch (Throwable e) {
                     reportWtf("starting MediaRouterService", e);
                 }
+
+                try {
+                    Slog.i(TAG, "BackgroundDexOptService");
+                    new BackgroundDexOptService(context);
+                } catch (Throwable e) {
+                    reportWtf("starting BackgroundDexOptService", e);
+                }
             }
         }
 
@@ -824,7 +832,7 @@ class ServerThread {
         if (safeMode) {
             ActivityManagerService.self().enterSafeMode();
             // Post the safe mode state in the Zygote class
-            Zygote.systemInSafeMode = true;
+            SystemServer.inSafeMode = true;
             // Disable the JIT for the system_server process
             VMRuntime.getRuntime().disableJitCompilation();
         } else {
@@ -1117,6 +1125,11 @@ public class SystemServer {
     // give any timezone code room without going into negative time.
     private static final long EARLIEST_SUPPORTED_TIME = 86400 * 1000;
 
+   /**
+    * When set, all subsequent apps will be launched in safe mode.
+    */
+    public static boolean inSafeMode;
+
     /**
      * Called to initialize native system services.
      */
@@ -1133,7 +1146,7 @@ public class SystemServer {
          * running as root and we need to be the system user to set
          * the property. http://b/11463182
          */
-        SystemProperties.set("persist.sys.dalvik.vm.lib",
+        SystemProperties.set("persist.sys.dalvik.vm.lib.2",
                              VMRuntime.getRuntime().vmLibrary());
 
         if (System.currentTimeMillis() < EARLIEST_SUPPORTED_TIME) {

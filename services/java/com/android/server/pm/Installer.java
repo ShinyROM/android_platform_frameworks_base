@@ -201,29 +201,62 @@ public final class Installer {
         return execute(builder.toString());
     }
 
-    public int dexopt(String apkPath, int uid, boolean isPublic) {
+    public int dexopt(String apkPath, int uid, boolean isPublic, String instructionSet) {
         StringBuilder builder = new StringBuilder("dexopt");
         builder.append(' ');
         builder.append(apkPath);
         builder.append(' ');
         builder.append(uid);
         builder.append(isPublic ? " 1" : " 0");
+        builder.append(" *");         // No pkgName arg present
+        builder.append(' ');
+        builder.append(instructionSet);
         return execute(builder.toString());
     }
 
-    public int movedex(String srcPath, String dstPath) {
+    public int dexopt(String apkPath, int uid, boolean isPublic, String pkgName,
+            String instructionSet) {
+        StringBuilder builder = new StringBuilder("dexopt");
+        builder.append(' ');
+        builder.append(apkPath);
+        builder.append(' ');
+        builder.append(uid);
+        builder.append(isPublic ? " 1" : " 0");
+        builder.append(' ');
+        builder.append(pkgName);
+        builder.append(' ');
+        builder.append(instructionSet);
+        return execute(builder.toString());
+    }
+
+    public int idmap(String targetApkPath, String overlayApkPath, int uid) {
+        StringBuilder builder = new StringBuilder("idmap");
+        builder.append(' ');
+        builder.append(targetApkPath);
+        builder.append(' ');
+        builder.append(overlayApkPath);
+        builder.append(' ');
+        builder.append(uid);
+        return execute(builder.toString());
+    }
+
+    public int movedex(String srcPath, String dstPath, String instructionSet) {
         StringBuilder builder = new StringBuilder("movedex");
         builder.append(' ');
         builder.append(srcPath);
         builder.append(' ');
         builder.append(dstPath);
+        builder.append(' ');
+        builder.append(instructionSet);
         return execute(builder.toString());
     }
 
-    public int rmdex(String codePath) {
+    public int rmdex(String codePath, String instructionSet) {
         StringBuilder builder = new StringBuilder("rmdex");
         builder.append(' ');
         builder.append(codePath);
+        builder.append(' ');
+        builder.append(instructionSet);
         return execute(builder.toString());
     }
 
@@ -265,7 +298,7 @@ public final class Installer {
         return execute(builder.toString());
     }
 
-    public int createUserData(String name, int uid, int userId) {
+    public int createUserData(String name, int uid, int userId, String seinfo) {
         StringBuilder builder = new StringBuilder("mkuserdata");
         builder.append(' ');
         builder.append(name);
@@ -273,6 +306,8 @@ public final class Installer {
         builder.append(uid);
         builder.append(' ');
         builder.append(userId);
+        builder.append(' ');
+        builder.append(seinfo != null ? seinfo : "!");
         return execute(builder.toString());
     }
 
@@ -300,6 +335,10 @@ public final class Installer {
         }
     }
 
+    public int pruneDexCache() {
+        return execute("prunedexcache");
+    }
+
     public int freeCache(long freeStorageSize) {
         StringBuilder builder = new StringBuilder("freecache");
         builder.append(' ');
@@ -308,7 +347,7 @@ public final class Installer {
     }
 
     public int getSizeInfo(String pkgName, int persona, String apkPath, String libDirPath,
-            String fwdLockApkPath, String asecPath, PackageStats pStats) {
+            String fwdLockApkPath, String asecPath, String instructionSet, PackageStats pStats) {
         StringBuilder builder = new StringBuilder("getsize");
         builder.append(' ');
         builder.append(pkgName);
@@ -322,6 +361,8 @@ public final class Installer {
         builder.append(fwdLockApkPath != null ? fwdLockApkPath : "!");
         builder.append(' ');
         builder.append(asecPath != null ? asecPath : "!");
+        builder.append(' ');
+        builder.append(instructionSet);
 
         String s = transaction(builder.toString());
         String res[] = s.split(" ");
@@ -369,5 +410,16 @@ public final class Installer {
         builder.append(userId);
 
         return execute(builder.toString());
+    }
+
+    public boolean restoreconData(String pkgName, String seinfo, int uid) {
+        StringBuilder builder = new StringBuilder("restorecondata");
+        builder.append(' ');
+        builder.append(pkgName);
+        builder.append(' ');
+        builder.append(seinfo != null ? seinfo : "!");
+        builder.append(' ');
+        builder.append(uid);
+        return (execute(builder.toString()) == 0);
     }
 }

@@ -38,6 +38,7 @@ import com.android.internal.os.BackgroundThread;
 import com.android.internal.os.BatteryStatsImpl;
 import com.android.internal.os.ProcessCpuTracker;
 import com.android.internal.os.TransferPipe;
+import com.android.internal.os.Zygote;
 import com.android.internal.util.FastPrintWriter;
 import com.android.internal.util.FastXmlSerializer;
 import com.android.internal.util.MemInfoReader;
@@ -56,8 +57,6 @@ import com.android.server.wm.StackBox;
 import com.android.server.wm.WindowManagerService;
 import com.google.android.collect.Lists;
 import com.google.android.collect.Maps;
-
-import dalvik.system.Zygote;
 
 import libcore.io.IoUtils;
 
@@ -269,7 +268,7 @@ public final class ActivityManagerService extends ActivityManagerNative
     // before we decide it's never going to come up for real, when the process was
     // started with a wrapper for instrumentation (such as Valgrind) because it
     // could take much longer than usual.
-    static final int PROC_START_TIMEOUT_WITH_WRAPPER = 300*1000;
+    static final int PROC_START_TIMEOUT_WITH_WRAPPER = 1200*1000;
 
     // How long to wait after going idle before forcing apps to GC.
     static final int GC_TIMEOUT = 5*1000;
@@ -925,7 +924,7 @@ public final class ActivityManagerService extends ActivityManagerNative
 
     /**
      * This is set if we had to do a delayed dexopt of an app before launching
-     * it, to increasing the ANR timeouts in that case.
+     * it, to increase the ANR timeouts in that case.
      */
     boolean mDidDexOpt;
 
@@ -1058,6 +1057,7 @@ public final class ActivityManagerService extends ActivityManagerNative
     static final int IMMERSIVE_MODE_LOCK_MSG = 37;
     static final int PERSIST_URI_GRANTS_MSG = 38;
     static final int REQUEST_ALL_PSS_MSG = 39;
+    static final int UPDATE_TIME = 40;
 
     static final int FIRST_ACTIVITY_STACK_MSG = 100;
     static final int FIRST_BROADCAST_QUEUE_MSG = 200;
@@ -1666,6 +1666,22 @@ public final class ActivityManagerService extends ActivityManagerNative
             }
             case REQUEST_ALL_PSS_MSG: {
                 requestPssAllProcsLocked(SystemClock.uptimeMillis(), true, false);
+                break;
+            }
+            case UPDATE_TIME: {
+                synchronized (ActivityManagerService.this) {
+                    for (int i = mLruProcesses.size() - 1 ; i >= 0 ; i--) {
+                        ProcessRecord r = mLruProcesses.get(i);
+                        if (r.thread != null) {
+                            try {
+                                r.thread.updateTimePrefs(msg.arg1 == 0 ? false : true);
+                            } catch (RemoteException ex) {
+                                Slog.w(TAG, "Failed to update preferences for: " + r.info.processName);
+                            }
+                        }
+                    }
+                }
+
                 break;
             }
             }
@@ -2670,7 +2686,7 @@ public final class ActivityManagerService extends ActivityManagerNative
             return app;
         }
 
-        startProcessLocked(app, hostingType, hostingNameStr);
+        startProcessLocked(app, hostingType, hostingNameStr, null /* ABI override */);
         return (app.pid != 0) ? app : null;
     }
 
@@ -2679,7 +2695,7 @@ public final class ActivityManagerService extends ActivityManagerNative
     }
 
     private final void startProcessLocked(ProcessRecord app,
-            String hostingType, String hostingNameStr) {
+            String hostingType, String hostingNameStr, String abiOverride) {
         if (app.pid > 0 && app.pid != MY_PID) {
             synchronized (mPidsSelfLocked) {
                 mPidsSelfLocked.remove(app.pid);
@@ -2719,16 +2735,17 @@ public final class ActivityManagerService extends ActivityManagerNative
                 }
 
                 /*
-                 * Add shared application GID so applications can share some
-                 * resources like shared libraries
+                 * Add shared application and profile GIDs so applications can share some
+                 * resources like shared libraries and access user-wide resources
                  */
                 if (permGids == null) {
-                    gids = new int[1];
+                    gids = new int[2];
                 } else {
-                    gids = new int[permGids.length + 1];
-                    System.arraycopy(permGids, 0, gids, 1, permGids.length);
+                    gids = new int[permGids.length + 2];
+                    System.arraycopy(permGids, 0, gids, 2, permGids.length);
                 }
                 gids[0] = UserHandle.getSharedAppGid(UserHandle.getAppId(uid));
+                gids[1] = UserHandle.getUserGid(UserHandle.getUserId(uid));
             }
             if (mFactoryTest != SystemServer.FACTORY_TEST_OFF) {
                 if (mFactoryTest == SystemServer.FACTORY_TEST_LOW_LEVEL
@@ -2751,7 +2768,7 @@ public final class ActivityManagerService extends ActivityManagerNative
             // Run the app in safe mode if its manifest requests so or the
             // system is booted in safe mode.
             if ((app.info.flags & ApplicationInfo.FLAG_VM_SAFE_MODE) != 0 ||
-                Zygote.systemInSafeMode == true) {
+                SystemServer.inSafeMode == true) {
                 debugFlags |= Zygote.DEBUG_ENABLE_SAFEMODE;
             }
             if ("1".equals(SystemProperties.get("debug.checkjni"))) {
@@ -2764,11 +2781,16 @@ public final class ActivityManagerService extends ActivityManagerNative
                 debugFlags |= Zygote.DEBUG_ENABLE_ASSERT;
             }
 
+            String requiredAbi = (abiOverride != null) ? abiOverride : app.info.cpuAbi;
+            if (requiredAbi == null) {
+                requiredAbi = Build.SUPPORTED_ABIS[0];
+            }
+
             // Start the process.  It will either succeed and return a result containing
             // the PID of the new process, or else throw a RuntimeException.
             Process.ProcessStartResult startResult = Process.start("android.app.ActivityThread",
                     app.processName, uid, uid, gids, debugFlags, mountExternal,
-                    app.info.targetSdkVersion, app.info.seinfo, null);
+                    app.info.targetSdkVersion, app.info.seinfo, requiredAbi, null);
 
             BatteryStatsImpl bs = mBatteryStatsService.getActiveStatistics();
             synchronized (bs) {
@@ -2809,6 +2831,10 @@ public final class ActivityManagerService extends ActivityManagerNative
                 }
             }
             buf.append("}");
+            if (requiredAbi != null) {
+                buf.append(" abi=");
+                buf.append(requiredAbi);
+            }
             Slog.i(TAG, buf.toString());
             app.setPid(startResult.pid);
             app.usingWrapper = startResult.usingWrapper;
@@ -4175,9 +4201,9 @@ public final class ActivityManagerService extends ActivityManagerNative
                         == PackageManager.PERMISSION_GRANTED) {
                     forceStopPackageLocked(packageName, pkgUid, "clear data");
                 } else {
-                    throw new SecurityException(pid+" does not have permission:"+
-                            android.Manifest.permission.CLEAR_APP_USER_DATA+" to clear data" +
-                                    "for process:"+packageName);
+                    throw new SecurityException("PID " + pid + " does not have permission "
+                            + android.Manifest.permission.CLEAR_APP_USER_DATA + " to clear data"
+                                    + " of package " + packageName);
                 }
             }
 
@@ -4783,7 +4809,7 @@ public final class ActivityManagerService extends ActivityManagerNative
 
             if (app.persistent && !app.isolated) {
                 if (!callerWillRestart) {
-                    addAppLocked(app.info, false);
+                    addAppLocked(app.info, false, null /* ABI override */);
                 } else {
                     needRestart = true;
                 }
@@ -4891,7 +4917,7 @@ public final class ActivityManagerService extends ActivityManagerNative
             app.deathRecipient = adr;
         } catch (RemoteException e) {
             app.resetPackageList(mProcessStats);
-            startProcessLocked(app, "link fail", processName);
+            startProcessLocked(app, "link fail", processName, null /* ABI override */);
             return false;
         }
 
@@ -4984,7 +5010,7 @@ public final class ActivityManagerService extends ActivityManagerNative
 
             app.resetPackageList(mProcessStats);
             app.unlinkDeathRecipient();
-            startProcessLocked(app, "bind fail", processName);
+            startProcessLocked(app, "bind fail", processName, null /* ABI override */);
             return false;
         }
 
@@ -5153,7 +5179,7 @@ public final class ActivityManagerService extends ActivityManagerNative
                 for (int ip=0; ip<NP; ip++) {
                     if (DEBUG_PROCESSES) Slog.v(TAG, "Starting process on hold: "
                             + procs.get(ip));
-                    startProcessLocked(procs.get(ip), "on-hold", null);
+                    startProcessLocked(procs.get(ip), "on-hold", null, null /* ABI override */);
                 }
             }
             
@@ -8154,7 +8180,8 @@ public final class ActivityManagerService extends ActivityManagerNative
         return new ProcessRecord(stats, info, proc, uid);
     }
 
-    final ProcessRecord addAppLocked(ApplicationInfo info, boolean isolated) {
+    final ProcessRecord addAppLocked(ApplicationInfo info, boolean isolated,
+            String abiOverride) {
         ProcessRecord app;
         if (!isolated) {
             app = getProcessRecordLocked(info.processName, info.uid, true);
@@ -8189,7 +8216,8 @@ public final class ActivityManagerService extends ActivityManagerNative
         }
         if (app.thread == null && mPersistentStartingProcesses.indexOf(app) < 0) {
             mPersistentStartingProcesses.add(app);
-            startProcessLocked(app, "added application", app.processName);
+            startProcessLocked(app, "added application", app.processName,
+                    abiOverride);
         }
 
         return app;
@@ -9380,7 +9408,7 @@ public final class ActivityManagerService extends ActivityManagerNative
                                 = (ApplicationInfo)apps.get(i);
                             if (info != null &&
                                     !info.packageName.equals("android")) {
-                                addAppLocked(info, false);
+                                addAppLocked(info, false, null /* ABI override */);
                             }
                         }
                     }
@@ -12423,6 +12451,7 @@ public final class ActivityManagerService extends ActivityManagerNative
         app.foregroundActivities = false;
         app.hasShownUi = false;
         app.hasAboveClient = false;
+        app.hasClientActivities = false;
 
         mServices.killServicesLocked(app, allowRestart);
 
@@ -12545,7 +12574,7 @@ public final class ActivityManagerService extends ActivityManagerNative
             // We have components that still need to be running in the
             // process, so re-launch it.
             mProcessNames.put(app.processName, app.uid, app);
-            startProcessLocked(app, "restart", app.processName);
+            startProcessLocked(app, "restart", app.processName, null /* ABI override */);
         } else if (app.pid > 0 && app.pid != MY_PID) {
             // Goodbye!
             synchronized (mPidsSelfLocked) {
@@ -13438,11 +13467,20 @@ public final class ActivityManagerService extends ActivityManagerNative
          * of all currently running processes. This message will get queued up before the broadcast
          * happens.
          */
-        if (intent.ACTION_TIMEZONE_CHANGED.equals(intent.getAction())) {
+        if (Intent.ACTION_TIMEZONE_CHANGED.equals(intent.getAction())) {
             mHandler.sendEmptyMessage(UPDATE_TIME_ZONE);
         }
 
-        if (intent.ACTION_CLEAR_DNS_CACHE.equals(intent.getAction())) {
+        /*
+         * If the user set the time, let all running processes know.
+         */
+        if (Intent.ACTION_TIME_CHANGED.equals(intent.getAction())) {
+            final int is24Hour = intent.getBooleanExtra(
+                    Intent.EXTRA_TIME_PREF_24_HOUR_FORMAT, false) ? 1 : 0;
+            mHandler.sendMessage(mHandler.obtainMessage(UPDATE_TIME, is24Hour, 0));
+        }
+
+        if (Intent.ACTION_CLEAR_DNS_CACHE.equals(intent.getAction())) {
             mHandler.sendEmptyMessage(CLEAR_DNS_CACHE_MSG);
         }
 
@@ -13827,7 +13865,7 @@ public final class ActivityManagerService extends ActivityManagerNative
     public boolean startInstrumentation(ComponentName className,
             String profileFile, int flags, Bundle arguments,
             IInstrumentationWatcher watcher, IUiAutomationConnection uiAutomationConnection,
-            int userId) {
+            int userId, String abiOverride) {
         enforceNotIsolatedCaller("startInstrumentation");
         userId = handleIncomingUser(Binder.getCallingPid(), Binder.getCallingUid(),
                 userId, false, true, "startInstrumentation", null);
@@ -13876,7 +13914,7 @@ public final class ActivityManagerService extends ActivityManagerNative
             // Instrumentation can kill and relaunch even persistent processes
             forceStopPackageLocked(ii.targetPackage, -1, true, false, true, true, false, userId,
                     "start instr");
-            ProcessRecord app = addAppLocked(ai, false);
+            ProcessRecord app = addAppLocked(ai, false, abiOverride);
             app.instrumentationClass = className;
             app.instrumentationInfo = ai;
             app.instrumentationProfileFile = profileFile;
@@ -15806,7 +15844,7 @@ public final class ActivityManagerService extends ActivityManagerNative
                     
                     if (app.persistent) {
                         if (app.persistent) {
-                            addAppLocked(app.info, false);
+                            addAppLocked(app.info, false, null /* ABI override */);
                         }
                     }
                 }

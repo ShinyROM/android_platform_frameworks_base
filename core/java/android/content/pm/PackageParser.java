@@ -58,7 +58,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
+import java.util.jar.StrictJarFile;
 import java.util.zip.ZipEntry;
 
 import com.android.internal.util.XmlUtils;
@@ -307,6 +307,7 @@ public class PackageParser {
         }
         pi.restrictedAccountType = p.mRestrictedAccountType;
         pi.requiredAccountType = p.mRequiredAccountType;
+        pi.overlayTarget = p.mOverlayTarget;
         pi.firstInstallTime = firstInstallTime;
         pi.lastUpdateTime = lastUpdateTime;
         if ((flags&PackageManager.GET_GIDS) != 0) {
@@ -456,7 +457,7 @@ public class PackageParser {
         return pi;
     }
 
-    private Certificate[] loadCertificates(JarFile jarFile, JarEntry je,
+    private Certificate[] loadCertificates(StrictJarFile jarFile, ZipEntry je,
             byte[] readBuffer) {
         try {
             // We must read the stream for the JarEntry to retrieve
@@ -466,13 +467,11 @@ public class PackageParser {
                 // not using
             }
             is.close();
-            return je != null ? je.getCertificates() : null;
+            return je != null ? jarFile.getCertificates(je) : null;
         } catch (IOException e) {
-            Slog.w(TAG, "Exception reading " + je.getName() + " in "
-                    + jarFile.getName(), e);
+            Slog.w(TAG, "Exception reading " + je.getName() + " in " + jarFile, e);
         } catch (RuntimeException e) {
-            Slog.w(TAG, "Exception reading " + je.getName() + " in "
-                    + jarFile.getName(), e);
+            Slog.w(TAG, "Exception reading " + je.getName() + " in " + jarFile, e);
         }
         return null;
     }
@@ -492,6 +491,11 @@ public class PackageParser {
 
     public Package parsePackage(File sourceFile, String destCodePath,
             DisplayMetrics metrics, int flags) {
+        return parsePackage(sourceFile, destCodePath, metrics, flags, false);
+    }
+
+    public Package parsePackage(File sourceFile, String destCodePath,
+            DisplayMetrics metrics, int flags, boolean trustedOverlay) {
         mParseError = PackageManager.INSTALL_SUCCEEDED;
 
         mArchiveSourcePath = sourceFile.getPath();
@@ -544,7 +548,7 @@ public class PackageParser {
         Exception errorException = null;
         try {
             // XXXX todo: need to figure out correct configuration.
-            pkg = parsePackage(res, parser, flags, errorText);
+            pkg = parsePackage(res, parser, flags, trustedOverlay, errorText);
         } catch (Exception e) {
             errorException = e;
             mParseError = PackageManager.INSTALL_PARSE_FAILED_UNEXPECTED_EXCEPTION;
@@ -591,9 +595,9 @@ public class PackageParser {
      */
     public boolean collectManifestDigest(Package pkg) {
         try {
-            final JarFile jarFile = new JarFile(mArchiveSourcePath);
+            final StrictJarFile jarFile = new StrictJarFile(mArchiveSourcePath);
             try {
-                final ZipEntry je = jarFile.getEntry(ANDROID_MANIFEST_FILENAME);
+                final ZipEntry je = jarFile.findEntry(ANDROID_MANIFEST_FILENAME);
                 if (je != null) {
                     pkg.manifestDigest = ManifestDigest.fromInputStream(jarFile.getInputStream(je));
                 }
@@ -624,7 +628,7 @@ public class PackageParser {
         }
 
         try {
-            JarFile jarFile = new JarFile(mArchiveSourcePath);
+            StrictJarFile jarFile = new StrictJarFile(mArchiveSourcePath);
 
             Certificate[] certs = null;
 
@@ -633,7 +637,7 @@ public class PackageParser {
                 // can trust it...  we'll just use the AndroidManifest.xml
                 // to retrieve its signatures, not validating all of the
                 // files.
-                JarEntry jarEntry = jarFile.getJarEntry(ANDROID_MANIFEST_FILENAME);
+                ZipEntry jarEntry = jarFile.findEntry(ANDROID_MANIFEST_FILENAME);
                 certs = loadCertificates(jarFile, jarEntry, readBuffer);
                 if (certs == null) {
                     Slog.e(TAG, "Package " + pkg.packageName
@@ -656,9 +660,9 @@ public class PackageParser {
                     }
                 }
             } else {
-                Enumeration<JarEntry> entries = jarFile.entries();
-                while (entries.hasMoreElements()) {
-                    final JarEntry je = entries.nextElement();
+                Iterator<ZipEntry> entries = jarFile.iterator();
+                while (entries.hasNext()) {
+                    final ZipEntry je = entries.next();
                     if (je.isDirectory()) continue;
 
                     final String name = je.getName();
@@ -741,6 +745,10 @@ public class PackageParser {
             mParseError = PackageManager.INSTALL_PARSE_FAILED_CERTIFICATE_ENCODING;
             return false;
         } catch (IOException e) {
+            Slog.w(TAG, "Exception reading " + mArchiveSourcePath, e);
+            mParseError = PackageManager.INSTALL_PARSE_FAILED_CERTIFICATE_ENCODING;
+            return false;
+        } catch (SecurityException e) {
             Slog.w(TAG, "Exception reading " + mArchiveSourcePath, e);
             mParseError = PackageManager.INSTALL_PARSE_FAILED_CERTIFICATE_ENCODING;
             return false;
@@ -949,8 +957,8 @@ public class PackageParser {
     }
 
     private Package parsePackage(
-        Resources res, XmlResourceParser parser, int flags, String[] outError)
-        throws XmlPullParserException, IOException {
+        Resources res, XmlResourceParser parser, int flags, boolean trustedOverlay,
+        String[] outError) throws XmlPullParserException, IOException {
         AttributeSet attrs = parser;
 
         mParseInstrumentationArgs = null;
@@ -1049,6 +1057,31 @@ public class PackageParser {
                 if (!parseApplication(pkg, res, parser, attrs, flags, outError)) {
                     return null;
                 }
+            } else if (tagName.equals("overlay")) {
+                pkg.mTrustedOverlay = trustedOverlay;
+
+                sa = res.obtainAttributes(attrs,
+                        com.android.internal.R.styleable.AndroidManifestResourceOverlay);
+                pkg.mOverlayTarget = sa.getString(
+                        com.android.internal.R.styleable.AndroidManifestResourceOverlay_targetPackage);
+                pkg.mOverlayPriority = sa.getInt(
+                        com.android.internal.R.styleable.AndroidManifestResourceOverlay_priority,
+                        -1);
+                sa.recycle();
+
+                if (pkg.mOverlayTarget == null) {
+                    outError[0] = "<overlay> does not specify a target package";
+                    mParseError = PackageManager.INSTALL_PARSE_FAILED_MANIFEST_MALFORMED;
+                    return null;
+                }
+                if (pkg.mOverlayPriority < 0 || pkg.mOverlayPriority > 9999) {
+                    outError[0] = "<overlay> priority must be between 0 and 9999";
+                    mParseError =
+                        PackageManager.INSTALL_PARSE_FAILED_MANIFEST_MALFORMED;
+                    return null;
+                }
+                XmlUtils.skipCurrentTag(parser);
+
             } else if (tagName.equals("keys")) {
                 if (!parseKeys(pkg, res, parser, attrs, outError)) {
                     return null;
@@ -3500,10 +3533,13 @@ public class PackageParser {
         // For use by the package manager to keep track of the path to the
         // file an app came from.
         public String mScanPath;
-        
-        // For use by package manager to keep track of where it has done dexopt.
-        public boolean mDidDexOpt;
-        
+
+        // For use by package manager to keep track of where it needs to do dexopt.
+        public boolean mDexOptNeeded = true;
+
+        // For use by package manager to keep track of when a package was last used.
+        public long mLastPackageUsageTimeInMills;
+
         // // User set enabled state.
         // public int mSetEnabled = PackageManager.COMPONENT_ENABLED_STATE_DEFAULT;
         //
@@ -3543,6 +3579,10 @@ public class PackageParser {
          * same as another.
          */
         public ManifestDigest manifestDigest;
+
+        public String mOverlayTarget;
+        public int mOverlayPriority;
+        public boolean mTrustedOverlay;
 
         /**
          * Data used to feed the KeySetManager

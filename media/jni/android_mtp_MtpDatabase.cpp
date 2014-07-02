@@ -17,11 +17,12 @@
 #define LOG_TAG "MtpDatabaseJNI"
 #include "utils/Log.h"
 
-#include <stdio.h>
 #include <assert.h>
-#include <limits.h>
-#include <unistd.h>
 #include <fcntl.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <stdio.h>
+#include <unistd.h>
 
 #include "jni.h"
 #include "JNIHelp.h"
@@ -80,7 +81,7 @@ static jfieldID field_mStringValues;
 
 
 MtpDatabase* getMtpDatabase(JNIEnv *env, jobject database) {
-    return (MtpDatabase *)env->GetIntField(database, field_context);
+    return (MtpDatabase *)env->GetLongField(database, field_context);
 }
 
 // ----------------------------------------------------------------------------
@@ -391,7 +392,7 @@ MtpResponseCode MyMtpDatabase::getObjectPropertyValue(MtpObjectHandle handle,
         // release date is stored internally as just the year
         if (property == MTP_PROPERTY_ORIGINAL_RELEASE_DATE) {
             char    date[20];
-            snprintf(date, sizeof(date), "%04lld0101T000000", longValue);
+            snprintf(date, sizeof(date), "%04" PRId64 "0101T000000", longValue);
             packet.putString(date);
             goto out;
         }
@@ -430,16 +431,14 @@ MtpResponseCode MyMtpDatabase::getObjectPropertyValue(MtpObjectHandle handle,
             case MTP_TYPE_STR:
             {
                 jstring stringValue = (jstring)env->GetObjectArrayElement(stringValuesArray, 0);
+                const char* str = (stringValue ? env->GetStringUTFChars(stringValue, NULL) : NULL);
                 if (stringValue) {
-                    const char* str = env->GetStringUTFChars(stringValue, NULL);
-                    if (str == NULL) {
-                        return MTP_RESPONSE_GENERAL_ERROR;
-                    }
                     packet.putString(str);
                     env->ReleaseStringUTFChars(stringValue, str);
                 } else {
                     packet.putEmptyString();
                 }
+                env->DeleteLocalRef(stringValue);
                 break;
              }
             default:
@@ -512,7 +511,7 @@ MtpResponseCode MyMtpDatabase::setObjectPropertyValue(MtpObjectHandle handle,
             break;
          }
         default:
-            ALOGE("unsupported type in getObjectPropertyValue\n");
+            ALOGE("unsupported type in setObjectPropertyValue\n");
             return MTP_RESPONSE_INVALID_OBJECT_PROP_FORMAT;
     }
 
@@ -648,7 +647,7 @@ MtpResponseCode MyMtpDatabase::setDevicePropertyValue(MtpDeviceProperty property
     return result;
 }
 
-MtpResponseCode MyMtpDatabase::resetDeviceProperty(MtpDeviceProperty property) {
+MtpResponseCode MyMtpDatabase::resetDeviceProperty(MtpDeviceProperty /*property*/) {
     return -1;
 }
 
@@ -1088,22 +1087,22 @@ static void
 android_mtp_MtpDatabase_setup(JNIEnv *env, jobject thiz)
 {
     MyMtpDatabase* database = new MyMtpDatabase(env, thiz);
-    env->SetIntField(thiz, field_context, (int)database);
+    env->SetLongField(thiz, field_context, (jlong)database);
     checkAndClearExceptionFromCallback(env, __FUNCTION__);
 }
 
 static void
 android_mtp_MtpDatabase_finalize(JNIEnv *env, jobject thiz)
 {
-    MyMtpDatabase* database = (MyMtpDatabase *)env->GetIntField(thiz, field_context);
+    MyMtpDatabase* database = (MyMtpDatabase *)env->GetLongField(thiz, field_context);
     database->cleanup(env);
     delete database;
-    env->SetIntField(thiz, field_context, 0);
+    env->SetLongField(thiz, field_context, 0);
     checkAndClearExceptionFromCallback(env, __FUNCTION__);
 }
 
 static jstring
-android_mtp_MtpPropertyGroup_format_date_time(JNIEnv *env, jobject thiz, jlong seconds)
+android_mtp_MtpPropertyGroup_format_date_time(JNIEnv *env, jobject /*thiz*/, jlong seconds)
 {
     char    date[20];
     formatDateTime(seconds, date, sizeof(date));
@@ -1230,7 +1229,7 @@ int register_android_mtp_MtpDatabase(JNIEnv *env)
         return -1;
     }
 
-    field_context = env->GetFieldID(clazz, "mNativeContext", "I");
+    field_context = env->GetFieldID(clazz, "mNativeContext", "J");
     if (field_context == NULL) {
         ALOGE("Can't find MtpDatabase.mNativeContext");
         return -1;

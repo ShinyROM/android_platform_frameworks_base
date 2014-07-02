@@ -49,7 +49,7 @@ public class Build {
     /** The manufacturer of the product/hardware. */
     public static final String MANUFACTURER = getString("ro.product.manufacturer");
 
-    /** The brand (e.g., carrier) the software is customized for, if any. */
+    /** The consumer-visible brand with which the product/hardware will be associated, if any. */
     public static final String BRAND = getString("ro.product.brand");
 
     /** The end-user-visible name for the end product. */
@@ -74,7 +74,41 @@ public class Build {
 
     /** A hardware serial number, if available.  Alphanumeric only, case-insensitive. */ 
     public static final String SERIAL = getString("ro.serialno");
-  
+
+    /**
+     * An ordered list of ABIs supported by this device. The most preferred ABI is the first
+     * element in the list.
+     *
+     * See {@link #SUPPORTED_32_BIT_ABIS} and {@link #SUPPORTED_64_BIT_ABIS}.
+     *
+     * @hide
+     */
+    public static final String[] SUPPORTED_ABIS = SystemProperties.get("ro.product.cpu.abilist")
+            .split(",");
+
+    /**
+     * An ordered list of <b>32 bit</b> ABIs supported by this device. The most preferred ABI
+     * is the first element in the list.
+     *
+     * See {@link #SUPPORTED_ABIS} and {@link #SUPPORTED_64_BIT_ABIS}.
+     *
+     * @hide
+     */
+    public static final String[] SUPPORTED_32_BIT_ABIS =
+            SystemProperties.get("ro.product.cpu.abilist32").split(",");
+
+    /**
+     * An ordered list of <b>64 bit</b> ABIs supported by this device. The most preferred ABI
+     * is the first element in the list.
+     *
+     * See {@link #SUPPORTED_ABIS} and {@link #SUPPORTED_32_BIT_ABIS}.
+     *
+     * @hide
+     */
+    public static final String[] SUPPORTED_64_BIT_ABIS =
+            SystemProperties.get("ro.product.cpu.abilist64").split(",");
+
+
     /** Various version strings. */
     public static class VERSION {
         /**

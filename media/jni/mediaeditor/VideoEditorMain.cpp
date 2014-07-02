@@ -16,6 +16,7 @@
 #define LOG_NDEBUG 1
 #define LOG_TAG "VideoEditorMain"
 #include <dlfcn.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <utils/Log.h>
@@ -24,7 +25,6 @@
 #include <VideoEditorJava.h>
 #include <VideoEditorOsal.h>
 #include <VideoEditorLogging.h>
-#include <marker.h>
 #include <VideoEditorClasses.h>
 #include <VideoEditorThumbnailMain.h>
 #include <M4OSA_Debug.h>
@@ -170,7 +170,7 @@ static void videoEditor_stopEncoding(
 static void videoEditor_release(
                 JNIEnv*                             pEnv,
                 jobject                             thiz);
-static int videoEditor_getPixels(
+static jint videoEditor_getPixels(
                                  JNIEnv*                  env,
                                  jobject                  thiz,
                                  jstring                  path,
@@ -178,7 +178,7 @@ static int videoEditor_getPixels(
                                  M4OSA_UInt32             width,
                                  M4OSA_UInt32             height,
                                  M4OSA_UInt32             timeMS);
-static int videoEditor_getPixelsList(
+static jint videoEditor_getPixelsList(
                                      JNIEnv*                  env,
                                      jobject                  thiz,
                                      jstring                  path,
@@ -209,7 +209,7 @@ videoEditor_populateSettings(
                 jobject                 object,
                 jobject                 audioSettingObject);
 
-static int videoEditor_stopPreview(JNIEnv*  pEnv,
+static jint videoEditor_stopPreview(JNIEnv*  pEnv,
                               jobject  thiz);
 
 static jobject
@@ -218,7 +218,7 @@ videoEditor_getProperties(
                 jobject                             thiz,
                 jstring                             file);
 
-static int videoEditor_renderPreviewFrame(JNIEnv* pEnv,
+static jint videoEditor_renderPreviewFrame(JNIEnv* pEnv,
                                     jobject thiz,
                                     jobject    mSurface,
                                     jlong fromMs,
@@ -231,7 +231,7 @@ static int videoEditor_registerManualEditMethods(
 static void jniPreviewProgressCallback(void* cookie, M4OSA_UInt32 msgType,
                                         void *argc);
 
-static int videoEditor_renderMediaItemPreviewFrame(JNIEnv* pEnv,
+static jint videoEditor_renderMediaItemPreviewFrame(JNIEnv* pEnv,
                                                     jobject thiz,
                                                     jobject mSurface,
                                                     jstring filePath,
@@ -241,7 +241,7 @@ static int videoEditor_renderMediaItemPreviewFrame(JNIEnv* pEnv,
                                                     jint surfaceHeight,
                                                     jlong fromMs);
 
-static int videoEditor_generateAudioWaveFormSync ( JNIEnv*     pEnv,
+static jint videoEditor_generateAudioWaveFormSync ( JNIEnv*     pEnv,
                                                   jobject     thiz,
                                                   jstring     pcmfilePath,
                                                   jstring     outGraphfilePath,
@@ -258,7 +258,7 @@ M4OSA_ERR videoEditor_generateAudio(JNIEnv* pEnv,ManualEditContext* pContext,
                                     M4OSA_Char* infilePath,
                                     M4OSA_Char* pcmfilePath );
 
-static int
+static jint
 videoEditor_generateClip(
                 JNIEnv*                             pEnv,
                 jobject                             thiz,
@@ -438,7 +438,7 @@ static void jniPreviewProgressCallback (void* cookie, M4OSA_UInt32 msgType,
                                     M4VS, (M4OSA_Char*)"videoEdito JNI overlayFile");
             if (pContext->mOverlayFileName != NULL) {
                 strncpy (pContext->mOverlayFileName,
-                    (const char*)pContext->pEditSettings->\
+                    (const char*)pContext->pEditSettings->
                     Effects[overlayEffectIndex].xVSS.pFramingFilePath, overlayFileNameLen);
                 //Change the name to png file
                 extPos = strstr(pContext->mOverlayFileName, ".rgb");
@@ -572,7 +572,7 @@ static M4OSA_ERR checkClipVideoProfileAndLevel(M4DECODER_VideoDecoders *pDecoder
 
     return result;
 }
-static int videoEditor_stopPreview(JNIEnv*  pEnv,
+static jint videoEditor_stopPreview(JNIEnv*  pEnv,
                               jobject  thiz)
 {
     ManualEditContext* pContext = M4OSA_NULL;
@@ -594,7 +594,7 @@ static int videoEditor_stopPreview(JNIEnv*  pEnv,
         pContext->mOverlayFileName = NULL;
     }
 
-    return lastProgressTimeMs;
+    return (jint)lastProgressTimeMs;
 }
 
 static void videoEditor_clearSurface(JNIEnv* pEnv,
@@ -654,7 +654,7 @@ static void videoEditor_clearSurface(JNIEnv* pEnv,
 
   }
 
-static int videoEditor_renderPreviewFrame(JNIEnv* pEnv,
+static jint videoEditor_renderPreviewFrame(JNIEnv* pEnv,
                                     jobject thiz,
                                     jobject    mSurface,
                                     jlong fromMs,
@@ -976,10 +976,10 @@ static int videoEditor_renderPreviewFrame(JNIEnv* pEnv,
         free(yuvPlane);
     }
 
-    return tnTimeMs;
+    return (jint)tnTimeMs;
 }
 
-static int videoEditor_renderMediaItemPreviewFrame(JNIEnv* pEnv,
+static jint videoEditor_renderMediaItemPreviewFrame(JNIEnv* pEnv,
                                                     jobject thiz,
                                                     jobject mSurface,
                                                     jstring filePath,
@@ -1033,7 +1033,7 @@ static int videoEditor_renderMediaItemPreviewFrame(JNIEnv* pEnv,
     /* get thumbnail*/
     result = ThumbnailOpen(&tnContext,(const M4OSA_Char*)pString, M4OSA_TRUE);
     if (result != M4NO_ERROR || tnContext  == M4OSA_NULL) {
-        return timeMs;
+        return (jint)timeMs;
     }
 
     framesizeYuv = ((frameWidth)*(frameHeight)*1.5);
@@ -1046,7 +1046,7 @@ static int videoEditor_renderMediaItemPreviewFrame(JNIEnv* pEnv,
         ThumbnailClose(tnContext);
         pMessage = videoEditJava_getErrorName(M4ERR_ALLOC);
         jniThrowException(pEnv, "java/lang/RuntimeException", pMessage);
-        return timeMs;
+        return (jint)timeMs;
     }
 
     result = ThumbnailGetPixels16(tnContext, (M4OSA_Int16 *)pixelArray,
@@ -1055,7 +1055,7 @@ static int videoEditor_renderMediaItemPreviewFrame(JNIEnv* pEnv,
     if (result != M4NO_ERROR) {
         free(pixelArray);
         ThumbnailClose(tnContext);
-        return fromMs;
+        return (jint)fromMs;
     }
 
 #ifdef DUMPTOFILESYSTEM
@@ -1131,10 +1131,10 @@ static int videoEditor_renderMediaItemPreviewFrame(JNIEnv* pEnv,
         pEnv->ReleaseStringUTFChars(filePath, pString);
     }
 
-    return timeMs;
+    return (jint)timeMs;
 }
 
-int videoEditor_generateAudioRawFile(   JNIEnv*     pEnv,
+jint videoEditor_generateAudioRawFile(  JNIEnv*     pEnv,
                                         jobject     thiz,
                                         jstring     infilePath,
                                         jstring     pcmfilePath)
@@ -1178,7 +1178,7 @@ int videoEditor_generateAudioRawFile(   JNIEnv*     pEnv,
         pEnv->ReleaseStringUTFChars(pcmfilePath, pStringOutPCMFilePath);
     }
 
-    return result;
+    return (jint)result;
 }
 
 M4OSA_ERR videoEditor_generateAudio(JNIEnv* pEnv,ManualEditContext* pContext,
@@ -1559,9 +1559,6 @@ videoEditor_populateSettings(
     int i,j = 0;
     int *pOverlayIndex = M4OSA_NULL;
     M4OSA_Char* pTempChar = M4OSA_NULL;
-
-    // Add a code marker (the condition must always be true).
-    ADD_CODE_MARKER_FUN(NULL != pEnv)
 
     // Validate the settings parameter.
     videoEditJava_checkAndThrowIllegalArgumentException(&needToBeLoaded, pEnv,
@@ -2182,7 +2179,7 @@ videoEditor_getProperties(
     return object;
 
 }
-static int videoEditor_getPixels(
+static jint videoEditor_getPixels(
                     JNIEnv*                     env,
                     jobject                     thiz,
                     jstring                     path,
@@ -2195,10 +2192,6 @@ static int videoEditor_getPixels(
     M4OSA_ERR       err = M4NO_ERROR;
     M4OSA_Context   mContext = M4OSA_NULL;
     jint*           m_dst32 = M4OSA_NULL;
-
-
-    // Add a text marker (the condition must always be true).
-    ADD_TEXT_MARKER_FUN(NULL != env)
 
     const char *pString = env->GetStringUTFChars(path, NULL);
     if (pString == M4OSA_NULL) {
@@ -2234,10 +2227,10 @@ static int videoEditor_getPixels(
         env->ReleaseStringUTFChars(path, pString);
     }
 
-    return timeMS;
+    return (jint)timeMS;
 }
 
-static int videoEditor_getPixelsList(
+static jint videoEditor_getPixelsList(
                 JNIEnv*                 env,
                 jobject                 thiz,
                 jstring                 path,
@@ -2257,7 +2250,7 @@ static int videoEditor_getPixelsList(
     const char *pString = env->GetStringUTFChars(path, NULL);
     if (pString == M4OSA_NULL) {
         jniThrowException(env, "java/lang/RuntimeException", "Input string null");
-        return M4ERR_ALLOC;
+        return (jint)M4ERR_ALLOC;
     }
 
     err = ThumbnailOpen(&mContext,(const M4OSA_Char*)pString, M4OSA_FALSE);
@@ -2266,7 +2259,7 @@ static int videoEditor_getPixelsList(
         if (pString != NULL) {
             env->ReleaseStringUTFChars(path, pString);
         }
-        return err;
+        return (jint)err;
     }
 
     jlong duration = (endTime - startTime);
@@ -2307,7 +2300,7 @@ static int videoEditor_getPixelsList(
                 "ThumbnailGetPixels32 failed");
     }
 
-    return err;
+    return (jint)err;
 }
 
 static M4OSA_ERR
@@ -2536,9 +2529,6 @@ videoEditor_init(
     M4OSA_ERR             result                 = M4NO_ERROR;
 
     VIDEOEDIT_LOG_API(ANDROID_LOG_INFO, "VIDEO_EDITOR", "videoEditor_init()");
-
-    // Add a text marker (the condition must always be true).
-    ADD_TEXT_MARKER_FUN(NULL != pEnv)
 
     // Get the context.
     pContext = (ManualEditContext*)videoEditClasses_getContext(&initialized, pEnv, thiz);
@@ -2892,7 +2882,7 @@ M4OSA_ERR videoEditor_processClip(
 }
 /*+ PROGRESS CB */
 
-static int
+static jint
 videoEditor_generateClip(
                 JNIEnv*                             pEnv,
                 jobject                             thiz,
@@ -2934,7 +2924,7 @@ videoEditor_generateClip(
     }
 
     ALOGV("videoEditor_generateClip END 0x%x", (unsigned int) result);
-    return result;
+    return (jint)result;
 }
 
 static void
@@ -2947,9 +2937,6 @@ videoEditor_loadSettings(
     ManualEditContext* pContext = M4OSA_NULL;
 
     VIDEOEDIT_LOG_API(ANDROID_LOG_INFO, "VIDEO_EDITOR", "videoEditor_loadSettings()");
-
-    // Add a code marker (the condition must always be true).
-    ADD_CODE_MARKER_FUN(NULL != pEnv)
 
     // Get the context.
     pContext = (ManualEditContext*)videoEditClasses_getContext(&needToBeLoaded,
@@ -3122,9 +3109,6 @@ videoEditor_release(
     M4OSA_ERR          result   = M4NO_ERROR;
 
     VIDEOEDIT_LOG_API(ANDROID_LOG_INFO, "VIDEO_EDITOR", "videoEditor_release()");
-
-    // Add a text marker (the condition must always be true).
-    ADD_TEXT_MARKER_FUN(NULL != pEnv)
 
     // Get the context.
     pContext = (ManualEditContext*)videoEditClasses_getContext(&released, pEnv, thiz);
@@ -3388,7 +3372,7 @@ M4OSA_ERR M4MA_generateAudioGraphFile(JNIEnv* pEnv, M4OSA_Char* pInputFileURL,
     err = M4OSA_fileReadOpen (&inputFileHandle, pInputFileURL, M4OSA_kFileRead);
     if (inputFileHandle == M4OSA_NULL) {
         VIDEOEDIT_LOG_ERROR(ANDROID_LOG_INFO, "VIDEO_EDITOR",
-            "M4MA_generateAudioGraphFile: Cannot open input file 0x%lx", err);
+            "M4MA_generateAudioGraphFile: Cannot open input file 0x%" PRIx32, err);
         return err;
     }
 
@@ -3422,7 +3406,7 @@ M4OSA_ERR M4MA_generateAudioGraphFile(JNIEnv* pEnv, M4OSA_Char* pInputFileURL,
         bufferIn.m_bufferSize = samplesCountInBytes*sizeof(M4OSA_UInt16);
     } else {
         VIDEOEDIT_LOG_ERROR(ANDROID_LOG_INFO, "VIDEO_EDITOR",
-            "M4MA_generateAudioGraphFile: Malloc failed for bufferIn.m_dataAddress 0x%lx",
+            "M4MA_generateAudioGraphFile: Malloc failed for bufferIn.m_dataAddress 0x%" PRIx32,
             M4ERR_ALLOC);
         return M4ERR_ALLOC;
     }
@@ -3462,7 +3446,7 @@ M4OSA_ERR M4MA_generateAudioGraphFile(JNIEnv* pEnv, M4OSA_Char* pInputFileURL,
         if (err != M4NO_ERROR) {
             // if out value of bytes-read is 0, break
             if ( numBytesToRead == 0) {
-                VIDEOEDIT_LOG_ERROR(ANDROID_LOG_INFO, "VIDEO_EDITOR", "numBytesToRead 0x%lx",
+                VIDEOEDIT_LOG_ERROR(ANDROID_LOG_INFO, "VIDEO_EDITOR", "numBytesToRead 0x%" PRIx32,
                 numBytesToRead);
                 break; /* stop if file is empty or EOF */
             }
@@ -3514,7 +3498,7 @@ M4OSA_ERR M4MA_generateAudioGraphFile(JNIEnv* pEnv, M4OSA_Char* pInputFileURL,
 
     } while (numBytesToRead != 0);
 
-    VIDEOEDIT_LOG_ERROR(ANDROID_LOG_INFO, "VIDEO_EDITOR", "loop 0x%lx", volumeValuesCount);
+    VIDEOEDIT_LOG_ERROR(ANDROID_LOG_INFO, "VIDEO_EDITOR", "loop 0x%" PRIx32, volumeValuesCount);
 
     /* if some error occured in fwrite */
     if (numBytesToRead != 0) {
@@ -3556,7 +3540,7 @@ M4OSA_ERR M4MA_generateAudioGraphFile(JNIEnv* pEnv, M4OSA_Char* pInputFileURL,
     return err;
 }
 
-static int videoEditor_generateAudioWaveFormSync (JNIEnv*  pEnv, jobject thiz,
+static jint videoEditor_generateAudioWaveFormSync (JNIEnv*  pEnv, jobject thiz,
                                                   jstring pcmfilePath,
                                                   jstring outGraphfilePath,
                                                   jint frameDuration, jint channels,
@@ -3619,7 +3603,7 @@ out:
     VIDEOEDIT_LOG_FUNCTION(ANDROID_LOG_INFO, "VIDEO_EDITOR",
         "videoEditor_generateAudioWaveFormSync pContext->bSkipState ");
 
-    return result;
+    return (jint)result;
 }
 
 /******** End Audio Graph *******/
@@ -3633,15 +3617,9 @@ jint JNI_OnLoad(
 
     VIDEOEDIT_LOG_FUNCTION(ANDROID_LOG_INFO, "VIDEO_EDITOR", "JNI_OnLoad()");
 
-    // Add a text marker (the condition must always be true).
-    ADD_TEXT_MARKER_FUN(NULL != pVm)
-
     // Check the JNI version.
     if (pVm->GetEnv(&pEnv, JNI_VERSION_1_4) == JNI_OK)
     {
-        // Add a code marker (the condition must always be true).
-        ADD_CODE_MARKER_FUN(NULL != pEnv)
-
         // Register the manual edit JNI methods.
         if (videoEditor_registerManualEditMethods((JNIEnv*)pEnv) == 0)
         {

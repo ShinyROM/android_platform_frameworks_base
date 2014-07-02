@@ -505,7 +505,7 @@ int doDump(Bundle* bundle)
     const char* filename = bundle->getFileSpecEntry(1);
 
     AssetManager assets;
-    void* assetsCookie;
+    int32_t assetsCookie;
     if (!assets.addAssetPath(String8(filename), &assetsCookie)) {
         fprintf(stderr, "ERROR: dump failed because assets could not be loaded\n");
         return 1;
@@ -517,6 +517,7 @@ int doDump(Bundle* bundle)
     // the API version because key resources like icons will have an implicit
     // version if they are using newer config types like density.
     ResTable_config config;
+    memset(&config, 0, sizeof(ResTable_config));
     config.language[0] = 'e';
     config.language[1] = 'n';
     config.country[0] = 'U';
@@ -1884,14 +1885,17 @@ int doPackage(Bundle* bundle)
     FILE* fp;
     String8 dependencyFile;
 
-    // -c zz_ZZ means do pseudolocalization
+    // -c en_XA or/and ar_XB means do pseudolocalization
     ResourceFilter filter;
     err = filter.parse(bundle->getConfigurations());
     if (err != NO_ERROR) {
         goto bail;
     }
     if (filter.containsPseudo()) {
-        bundle->setPseudolocalize(true);
+        bundle->setPseudolocalize(bundle->getPseudolocalize() | PSEUDO_ACCENTED);
+    }
+    if (filter.containsPseudoBidi()) {
+        bundle->setPseudolocalize(bundle->getPseudolocalize() | PSEUDO_BIDI);
     }
 
     N = bundle->getFileSpecCount();

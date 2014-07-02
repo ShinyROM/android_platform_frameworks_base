@@ -42,6 +42,8 @@ public class Environment {
     private static final String ENV_MEDIA_STORAGE = "MEDIA_STORAGE";
     private static final String ENV_SECONDARY_STORAGE = "SECONDARY_STORAGE";
     private static final String ENV_ANDROID_ROOT = "ANDROID_ROOT";
+    private static final String ENV_OEM_ROOT = "OEM_ROOT";
+    private static final String ENV_VENDOR_ROOT = "VENDOR_ROOT";
 
     /** {@hide} */
     public static final String DIR_ANDROID = "Android";
@@ -56,6 +58,8 @@ public class Environment {
     public static final String DIRECTORY_ANDROID = DIR_ANDROID;
 
     private static final File DIR_ANDROID_ROOT = getDirectory(ENV_ANDROID_ROOT, "/system");
+    private static final File DIR_OEM_ROOT = getDirectory(ENV_OEM_ROOT, "/oem");
+    private static final File DIR_VENDOR_ROOT = getDirectory(ENV_VENDOR_ROOT, "/vendor");
     private static final File DIR_MEDIA_STORAGE = getDirectory(ENV_MEDIA_STORAGE, "/data/media");
 
     private static final String CANONCIAL_EMULATED_STORAGE_TARGET = getCanonicalPathOrNull(
@@ -244,6 +248,25 @@ public class Environment {
     }
 
     /**
+     * Return root directory of the "oem" partition holding OEM customizations,
+     * if any. If present, the partition is mounted read-only.
+     *
+     * @hide
+     */
+    public static File getOemDirectory() {
+        return DIR_OEM_ROOT;
+    }
+
+    /**
+     * Return root directory of the "vendor" partition that holds vendor-provided
+     * software that should persist across simple reflashing of the "system" partition.
+     * @hide
+     */
+    public static File getVendorDirectory() {
+        return DIR_VENDOR_ROOT;
+    }
+
+    /**
      * Gets the system directory available for secure storage.
      * If Encrypted File system is enabled, it returns an encrypted directory (/data/secure/system).
      * Otherwise, it returns the unencrypted /data/system directory.
@@ -293,6 +316,17 @@ public class Environment {
      */
     public static File getUserSystemDirectory(int userId) {
         return new File(new File(getSystemSecureDirectory(), "users"), Integer.toString(userId));
+    }
+
+    /**
+     * Returns the config directory for a user. This is for use by system services to store files
+     * relating to the user which should be readable by any app running as that user.
+     *
+     * @hide
+     */
+    public static File getUserConfigDirectory(int userId) {
+        return new File(new File(new File(
+                getDataDirectory(), "misc"), "user"), Integer.toString(userId));
     }
 
     /**

@@ -44,6 +44,8 @@ import android.provider.Settings;
 import android.sax.Element;
 import android.sax.ElementListener;
 import android.sax.RootElement;
+import android.system.ErrnoException;
+import android.system.Os;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.Xml;
@@ -58,9 +60,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Locale;
-
-import libcore.io.ErrnoException;
-import libcore.io.Libcore;
 
 /**
  * Internal service helper that no-one should use directly.
@@ -301,7 +300,7 @@ public class MediaScanner
         // 148 and up don't seem to have been defined yet.
     };
 
-    private int mNativeContext;
+    private long mNativeContext;
     private Context mContext;
     private String mPackageName;
     private IContentProvider mMediaProvider;
@@ -1129,7 +1128,7 @@ public class MediaScanner
                         if (path != null && path.startsWith("/")) {
                             boolean exists = false;
                             try {
-                                exists = Libcore.os.access(path, libcore.io.OsConstants.F_OK);
+                                exists = Os.access(path, android.system.OsConstants.F_OK);
                             } catch (ErrnoException e1) {
                             }
                             if (!exists && !MtpConstants.isAbstractObject(format)) {
@@ -1280,6 +1279,14 @@ public class MediaScanner
         mMediaProvider = null;
     }
 
+    private void releaseResources() {
+        // release the DrmManagerClient resources
+        if (mDrmManagerClient != null) {
+            mDrmManagerClient.release();
+            mDrmManagerClient = null;
+        }
+    }
+
     private void initialize(String volumeName) {
         mMediaProvider = mContext.getContentResolver().acquireProvider("media");
 
@@ -1340,6 +1347,8 @@ public class MediaScanner
             Log.e(TAG, "UnsupportedOperationException in MediaScanner.scan()", e);
         } catch (RemoteException e) {
             Log.e(TAG, "RemoteException in MediaScanner.scan()", e);
+        } finally {
+            releaseResources();
         }
     }
 
@@ -1363,6 +1372,8 @@ public class MediaScanner
         } catch (RemoteException e) {
             Log.e(TAG, "RemoteException in MediaScanner.scanFile()", e);
             return null;
+        } finally {
+            releaseResources();
         }
     }
 
@@ -1477,6 +1488,7 @@ public class MediaScanner
             if (fileList != null) {
                 fileList.close();
             }
+            releaseResources();
         }
     }
 

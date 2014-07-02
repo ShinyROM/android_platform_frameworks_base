@@ -346,7 +346,7 @@ void PathCache::PathProcessor::onProcess(const sp<Task<SkBitmap*> >& task) {
 
     float left, top, offset;
     uint32_t width, height;
-    PathCache::computePathBounds(t->path, t->paint, left, top, offset, width, height);
+    PathCache::computePathBounds(t->path, &t->paint, left, top, offset, width, height);
 
     PathTexture* texture = t->texture;
     texture->left = left;
@@ -357,7 +357,7 @@ void PathCache::PathProcessor::onProcess(const sp<Task<SkBitmap*> >& task) {
 
     if (width <= mMaxTextureSize && height <= mMaxTextureSize) {
         SkBitmap* bitmap = new SkBitmap();
-        drawPath(t->path, t->paint, *bitmap, left, top, offset, width, height);
+        drawPath(t->path, &t->paint, *bitmap, left, top, offset, width, height);
         t->setResult(bitmap);
     } else {
         texture->width = 0;
@@ -395,7 +395,9 @@ void PathCache::clearGarbage() {
         Mutex::Autolock l(mLock);
         size_t count = mGarbage.size();
         for (size_t i = 0; i < count; i++) {
-            remove(pathsToRemove, mGarbage.itemAt(i));
+            const path_pair_t& pair = mGarbage.itemAt(i);
+            remove(pathsToRemove, pair);
+            delete pair.getFirst();
         }
         mGarbage.clear();
     }

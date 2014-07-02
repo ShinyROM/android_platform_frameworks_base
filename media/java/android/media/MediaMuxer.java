@@ -65,8 +65,6 @@ import java.util.Map;
 
 final public class MediaMuxer {
 
-    private int mNativeContext;
-
     static {
         System.loadLibrary("media_jni");
     }
@@ -84,16 +82,16 @@ final public class MediaMuxer {
     };
 
     // All the native functions are listed here.
-    private static native int nativeSetup(FileDescriptor fd, int format);
-    private static native void nativeRelease(int nativeObject);
-    private static native void nativeStart(int nativeObject);
-    private static native void nativeStop(int nativeObject);
-    private static native int nativeAddTrack(int nativeObject, String[] keys,
+    private static native long nativeSetup(FileDescriptor fd, int format);
+    private static native void nativeRelease(long nativeObject);
+    private static native void nativeStart(long nativeObject);
+    private static native void nativeStop(long nativeObject);
+    private static native int nativeAddTrack(long nativeObject, String[] keys,
             Object[] values);
-    private static native void nativeSetOrientationHint(int nativeObject,
+    private static native void nativeSetOrientationHint(long nativeObject,
             int degrees);
-    private static native void nativeSetLocation(int nativeObject, int latitude, int longitude);
-    private static native void nativeWriteSampleData(int nativeObject,
+    private static native void nativeSetLocation(long nativeObject, int latitude, int longitude);
+    private static native void nativeWriteSampleData(long nativeObject,
             int trackIndex, ByteBuffer byteBuf,
             int offset, int size, long presentationTimeUs, int flags);
 
@@ -108,7 +106,7 @@ final public class MediaMuxer {
     private final CloseGuard mCloseGuard = CloseGuard.get();
     private int mLastTrackIndex = -1;
 
-    private int mNativeObject;
+    private long mNativeObject;
 
     /**
      * Constructor.
